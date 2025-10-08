@@ -1,1 +1,6 @@
+# For graphics rendering
 libgl1-mesa-glx
+
+# For the XCB platform plugin (windowing system)
+libx11-xcb1
+libxkbcommon-x11-0
