@@ -12,3 +12,4 @@ Pillow
 opencv-python
 tifffile
 xlsxwriter
+seaborn
