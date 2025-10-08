@@ -12,7 +12,6 @@ st.set_page_config(layout="wide", page_title="Excel Data Visualizer")
 st.title("📊 Excel Data Visualization Tool")
 
 # --- Initialize Session State ---
-# Used to store the dataframe and plot figure across reruns
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'figure_buffer' not in st.session_state:
@@ -33,8 +32,6 @@ def calculate_ci_text(df, y_col, group_col):
                 ci = stats.t.interval(0.95, len(data_series) - 1, loc=mean, scale=sem)
                 ci_text.append(f"Overall Mean: {mean:.3f}")
                 ci_text.append(f"95% CI: ({ci[0]:.3f}, {ci[1]:.3f})")
-            else:
-                ci_text.append("Not enough data for overall CI calculation.")
         else:
             grouped = df.groupby(group_col)[y_col]
             for name, group in grouped:
@@ -45,8 +42,6 @@ def calculate_ci_text(df, y_col, group_col):
                     ci = stats.t.interval(0.95, len(group) - 1, loc=mean, scale=sem)
                     ci_text.append(f"Group '{name}':")
                     ci_text.append(f"  Mean={mean:.3f}, 95% CI=({ci[0]:.3f}, {ci[1]:.3f})")
-                else:
-                    ci_text.append(f"Group '{name}': Not enough data for CI.")
     except Exception as e:
         ci_text.append(f"Error calculating CI: {e}")
     return "\n".join(ci_text)
@@ -60,7 +55,6 @@ with st.sidebar:
 
     if uploaded_file:
         try:
-            # When a new file is uploaded, reset previous plot state
             st.session_state.df = pd.read_excel(uploaded_file, sheet_name=sheet_index)
             st.session_state.figure_buffer = None
             st.session_state.ci_text = ""
@@ -126,7 +120,6 @@ with st.sidebar:
             filtered_df = filtered_df[filtered_df[group2_col].isin(selected_groups2)]
 
     with st.expander("🎨 Formatting & Style", expanded=False):
-        st.write("**Labels & Font Sizes**")
         title = st.text_input("Plot Title", "My Plot Title")
         xlabel = st.text_input("X-Axis Label", x_col)
         ylabel = st.text_input("Y-Axis Label", y_col if not y_col_disabled else "Count")
@@ -134,13 +127,11 @@ with st.sidebar:
         label_fontsize = st.slider("Label Font", 6, 30, 12)
         tick_fontsize = st.slider("Tick Font", 6, 24, 10)
         st.divider()
-        st.write("**Colors & Appearance**")
         palette = st.selectbox("Color Palette", ["deep", "muted", "pastel", "bright", "dark", "colorblind", "viridis", "rocket"])
         bg_color = st.selectbox("Background Color", ["white", "lightgrey", "beige", "ivory", "whitesmoke"])
         alpha = st.slider("Plot Transparency (Alpha)", 0.0, 1.0, 0.7)
 
     with st.expander("✨ Advanced Axes & Lines", expanded=False):
-        st.write("**Axis Limits & Ticks**")
         col1, col2 = st.columns(2)
         xlim_min = col1.number_input("X-Axis Min", value=None, format="%f")
         xlim_max = col1.number_input("X-Axis Max", value=None, format="%f")
@@ -149,42 +140,39 @@ with st.sidebar:
         ylim_max = col2.number_input("Y-Axis Max", value=None, format="%f")
         yticks = col2.number_input("Y-Axis Ticks (#)", min_value=0, value=0, help="Approx. # of ticks. 0 for auto.")
         st.divider()
-        st.write("**Vertical Lines**")
-        vlines_str = st.text_input("X-Values (comma-separated)", help="e.g., 10, 25.5, 40")
+        vlines_str = st.text_input("Vertical Lines (X-Values, comma-separated)", help="e.g., 10, 25.5, 40")
         vcol1, vcol2, vcol3, vcol4 = st.columns(4)
         vline_width = vcol1.number_input("Width", 0.5, 10.0, 1.5, 0.5)
         vline_style = vcol2.selectbox("Style", ["solid", "dashed", "dotted", "dashdot"])
         vline_color = vcol3.selectbox("Color", ["red", "black", "blue", "green", "gray"])
         vline_alpha = vcol4.slider("Alpha", 0.0, 1.0, 1.0, 0.1)
 
+    # --- NEW: Export Options Section ---
+    with st.expander("📥 Export Options", expanded=True):
+        aspect_ratio_text = st.selectbox("Aspect Ratio (w x h inches)",
+                                         ["Auto (10x6)", "4:3 (8x6)", "16:9 (12x6.75)", "1:1 (8x8)"])
+        dpi = st.slider("DPI (Dots Per Inch)", 75, 600, 300, 25)
+
 st.divider()
 
-# --- Generate Plot Button (in Main Area) ---
 if st.button("🚀 Generate Plot", type="primary", use_container_width=True):
-    fig, ax = plt.subplots()
+    # --- Map aspect ratio text to figsize tuple ---
+    aspect_map = {
+        "Auto (10x6)": (10, 6),
+        "4:3 (8x6)": (8, 6),
+        "16:9 (12x6.75)": (12, 6.75),
+        "1:1 (8x8)": (8, 8)
+    }
+    figsize = aspect_map[aspect_ratio_text]
+
+    fig, ax = plt.subplots(figsize=figsize)
     try:
-        # --- Plotting Logic ---
+        # --- Plotting Logic (same as before) ---
         if plot_type == "Histogram":
             sns.histplot(data=filtered_df, x=x_col, hue=group1_col if group1_col != "None" else None, 
                          palette=palette, alpha=alpha, ax=ax, kde=(overlay == "KDE"), bins=num_bins)
             if overlay == "Rug":
                 sns.rugplot(data=filtered_df, x=x_col, hue=group1_col if group1_col != "None" else None, palette=palette, ax=ax)
-
-        elif plot_type == "Box Plot":
-            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
-            sns.boxplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None, palette=palette, ax=ax)
-        
-        elif plot_type == "Plot of Averages":
-            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
-            sns.pointplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None,
-                          errorbar=('ci', 95) if ci_checkbox else None, palette=palette, ax=ax, join=False, dodge=True)
-
-        elif plot_type == "Line Plot (of Averages)":
-            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
-            sns.lineplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None,
-                         style=group2_col if group2_col != "None" else None,
-                         errorbar=('ci', 95) if ci_checkbox else None, palette=palette, ax=ax, marker='o', 
-                         linestyle='-' if show_line else '')
 
         elif plot_type == "Bar Chart":
             if y_col == "None": raise ValueError("Please select a Y-Axis column.")
@@ -192,7 +180,20 @@ if st.button("🚀 Generate Plot", type="primary", use_container_width=True):
                         palette=palette, ax=ax, errorbar=('ci', 95) if ci_checkbox else None, alpha=alpha)
             if ci_checkbox:
                 st.session_state.ci_text = calculate_ci_text(filtered_df, y_col, group1_col if group1_col != "None" else None)
-
+        # ... (Other plot types remain the same) ...
+        elif plot_type == "Box Plot":
+            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
+            sns.boxplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None, palette=palette, ax=ax)
+        elif plot_type == "Plot of Averages":
+            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
+            sns.pointplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None,
+                          errorbar=('ci', 95) if ci_checkbox else None, palette=palette, ax=ax, join=False, dodge=True)
+        elif plot_type == "Line Plot (of Averages)":
+            if y_col == "None": raise ValueError("Please select a Y-Axis column.")
+            sns.lineplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None,
+                         style=group2_col if group2_col != "None" else None,
+                         errorbar=('ci', 95) if ci_checkbox else None, palette=palette, ax=ax, marker='o', 
+                         linestyle='-' if show_line else '')
         elif plot_type == "Scatter Plot":
             if y_col == "None": raise ValueError("Please select a Y-Axis column.")
             if ci_checkbox:
@@ -205,7 +206,7 @@ if st.button("🚀 Generate Plot", type="primary", use_container_width=True):
                 sns.scatterplot(data=filtered_df, x=x_col, y=y_col, hue=group1_col if group1_col != "None" else None,
                                 style=group2_col if group2_col != "None" else None, palette=palette, alpha=alpha, ax=ax)
 
-        # --- Apply Formatting ---
+        # --- Apply Formatting (same as before) ---
         fig.patch.set_facecolor(bg_color)
         ax.set_facecolor(bg_color)
         ax.set_title(title, fontsize=title_fontsize)
@@ -213,27 +214,24 @@ if st.button("🚀 Generate Plot", type="primary", use_container_width=True):
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
         ax.tick_params(axis='x', labelsize=tick_fontsize)
         ax.tick_params(axis='y', labelsize=tick_fontsize)
-
         if xticks > 0: ax.xaxis.set_major_locator(MaxNLocator(nbins=xticks))
         if yticks > 0: ax.yaxis.set_major_locator(MaxNLocator(nbins=yticks))
-
         current_xlim = ax.get_xlim()
         current_ylim = ax.get_ylim()
         ax.set_xlim(xlim_min if xlim_min is not None else current_xlim[0], 
                     xlim_max if xlim_max is not None else current_xlim[1])
         ax.set_ylim(ylim_min if ylim_min is not None else current_ylim[0],
                     ylim_max if ylim_max is not None else current_ylim[1])
-
         if vlines_str:
             line_vals = [float(v.strip()) for v in vlines_str.split(',')]
             for val in line_vals:
                 ax.axvline(x=val, color=vline_color, linestyle=vline_style, linewidth=vline_width, alpha=vline_alpha)
 
-        # --- Save Figure to Buffer for Downloading ---
+        # --- Save Figure to Buffer with selected DPI ---
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches='tight')
         st.session_state.figure_buffer = buf
-        plt.close(fig) # Close the figure to free memory
+        plt.close(fig) 
 
     except (ValueError, TypeError) as e:
         st.error(f"⚠️ An error occurred: {e}")
@@ -242,10 +240,8 @@ if st.button("🚀 Generate Plot", type="primary", use_container_width=True):
         st.error(f"An unexpected error occurred: {e}")
         st.session_state.figure_buffer = None
 
-# --- Display Plot and Export Options (if a plot has been generated) ---
 if st.session_state.figure_buffer:
     plot_col, ci_col = st.columns([0.75, 0.25])
-    
     with plot_col:
         st.image(st.session_state.figure_buffer)
         st.download_button(
@@ -255,7 +251,6 @@ if st.session_state.figure_buffer:
             mime="image/png",
             use_container_width=True
         )
-
     with ci_col:
         if st.session_state.ci_text:
             st.subheader("95% CI")
