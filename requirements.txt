@@ -8,11 +8,8 @@ openpyxl
 scipy
 pyqtgraph
 Pillow
-sys
-re
-functools
-traceback
 opencv-python
 tifffile
+
 
 
