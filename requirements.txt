@@ -14,3 +14,4 @@ tifffile
 xlsxwriter
 seaborn
 subprocess
+yt-dlp
