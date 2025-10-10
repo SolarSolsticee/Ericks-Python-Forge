@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import io
 import os
+import csv # Import the csv module for delimiter sniffing
 
 def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
-    Each CSV is copied verbatim into a separate sheet.
+    Each CSV is copied verbatim into a separate sheet. It automatically detects the
+    delimiter for each file.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
@@ -32,24 +34,33 @@ def merge_csv_to_excel_buffer(uploaded_files):
                 # Before reading the file, reset its internal pointer to the beginning
                 file.seek(0)
                 
-                # MODIFIED: Read the entire CSV file verbatim, without assuming any header row.
-                df = pd.read_csv(file, header=None)
+                # --- NEW: Auto-detect the delimiter ---
+                # Read the first few lines to get a sample for the sniffer
+                sample = file.read(2048).decode('utf-8', errors='ignore')
+                file.seek(0) # Reset pointer after reading sample
+                
+                # Use the CSV Sniffer to find the correct separator
+                dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+                delimiter = dialect.delimiter
+                
+                # MODIFIED: Read the CSV using the auto-detected delimiter.
+                # Added engine='python' for better flexibility with sniffing.
+                df = pd.read_csv(file, header=None, sep=delimiter, engine='python')
 
                 if not df.empty:
-                    # --- REMOVED: Data conversion is no longer needed for a verbatim copy. ---
-
                     # --- Sheet Name Generation ---
-                    # Create a descriptive sheet name from the original filename
                     sheet_base_name, _ = os.path.splitext(file.name)
                     # Sanitize the sheet name to comply with Excel's rules (e.g., max 31 chars)
                     sheet_name = sheet_base_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '_').replace('*', '_').replace('[', '_').replace(']', '_')
 
-                    # MODIFIED: Write the DataFrame to the Excel sheet without adding an
+                    # Write the DataFrame to the Excel sheet without adding an
                     # index or a header, ensuring a true verbatim copy.
                     df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
                 else:
                     st.warning(f"File '{file.name}' is empty and will be skipped.")
 
+            except csv.Error:
+                 st.error(f"Could not determine the delimiter for '{file.name}'. Please ensure it is a standard CSV file. Skipping.")
             except pd.errors.EmptyDataError:
                 st.warning(f"File '{file.name}' contains no data and will be skipped.")
             except Exception as e:
@@ -61,7 +72,6 @@ def merge_csv_to_excel_buffer(uploaded_files):
     progress_status.text("Merge complete!")
     
     # After writing is done, reset the buffer's pointer to the beginning
-    # This is crucial for the download button to be able to read the buffer's content
     output_buffer.seek(0)
     return output_buffer
 
