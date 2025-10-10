@@ -13,3 +13,4 @@ opencv-python
 tifffile
 xlsxwriter
 seaborn
+subprocess
