@@ -18,7 +18,7 @@ def get_video_title(url):
             sys.executable, "-m", "yt_dlp", 
             "--get-title", 
             "--no-warnings",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
             url
         ]
         # Use shlex.join to safely format the command for shell=True
@@ -37,10 +37,11 @@ def download_audio(url, output_filename="audio.mp3"):
     try:
         command_list = [
             sys.executable, "-m", "yt_dlp",
+            "-f", "bestaudio", # Explicitly select the best audio-only stream
             "-x",  # Extract audio
             "--audio-format", "mp3",
             "--no-warnings",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
             "-o", output_filename,
             url
         ]
@@ -127,5 +128,6 @@ else:
 # Footer
 st.markdown("---")
 st.markdown("Built with ❤️ using [Streamlit](https://streamlit.io) and powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).")
+
 
 
