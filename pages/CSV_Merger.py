@@ -7,8 +7,8 @@ import csv # Import the csv module for delimiter sniffing
 def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
-    Each CSV is copied verbatim into a separate sheet. It automatically detects the
-    delimiter for each file.
+    Each CSV is copied verbatim into a separate sheet. It uses a robust method to
+    handle non-standard CSV formats with title or empty rows.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
@@ -16,62 +16,58 @@ def merge_csv_to_excel_buffer(uploaded_files):
     Returns:
         io.BytesIO: A BytesIO buffer containing the generated Excel file data.
     """
-    # Create an in-memory buffer to hold the Excel file
     output_buffer = io.BytesIO()
-
-    # Use a progress bar to show the merging process
     progress_bar = st.progress(0)
     progress_status = st.empty()
 
-    # Create an Excel writer object targeting the in-memory buffer
     with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
         total_files = len(uploaded_files)
         for i, file in enumerate(uploaded_files):
-            # Update progress status for the user
             progress_status.text(f"Processing file {i+1}/{total_files}: {file.name}...")
             
             try:
-                # Before reading the file, reset its internal pointer to the beginning
                 file.seek(0)
                 
-                # --- NEW: Auto-detect the delimiter ---
-                # Read the first few lines to get a sample for the sniffer
-                sample = file.read(2048).decode('utf-8', errors='ignore')
-                file.seek(0) # Reset pointer after reading sample
+                # --- A MORE ROBUST PARSING STRATEGY ---
+                # First, decode the file from bytes to a string stream
+                # This is necessary for the csv module to work with it.
+                string_io = io.StringIO(file.getvalue().decode('utf-8', errors='ignore'))
                 
-                # Use the CSV Sniffer to find the correct separator
-                dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
-                delimiter = dialect.delimiter
-                
-                # MODIFIED: Read the CSV using the auto-detected delimiter.
-                # Added engine='python' for better flexibility with sniffing.
-                df = pd.read_csv(file, header=None, sep=delimiter, engine='python')
+                delimiter = ',' # Default delimiter
+                try:
+                    # Try to sniff the delimiter from a sample.
+                    # Reading the first line might not be enough if it's a title.
+                    sample = string_io.read(2048)
+                    string_io.seek(0) # Reset after reading sample
+                    dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+                    delimiter = dialect.delimiter
+                except csv.Error:
+                    st.warning(f"Could not auto-detect delimiter for '{file.name}'. Defaulting to comma (',').")
 
-                if not df.empty:
+                # Use the more lenient, built-in csv.reader to parse the file
+                # This handles rows with varying numbers of columns gracefully.
+                reader = csv.reader(string_io, delimiter=delimiter)
+                data = list(reader)
+
+                if data:
+                    # Convert the list of lists directly into a DataFrame
+                    df = pd.DataFrame(data)
+
                     # --- Sheet Name Generation ---
                     sheet_base_name, _ = os.path.splitext(file.name)
-                    # Sanitize the sheet name to comply with Excel's rules (e.g., max 31 chars)
                     sheet_name = sheet_base_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '_').replace('*', '_').replace('[', '_').replace(']', '_')
 
-                    # Write the DataFrame to the Excel sheet without adding an
-                    # index or a header, ensuring a true verbatim copy.
+                    # Write the DataFrame verbatim to the Excel sheet
                     df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
                 else:
                     st.warning(f"File '{file.name}' is empty and will be skipped.")
 
-            except csv.Error:
-                 st.error(f"Could not determine the delimiter for '{file.name}'. Please ensure it is a standard CSV file. Skipping.")
-            except pd.errors.EmptyDataError:
-                st.warning(f"File '{file.name}' contains no data and will be skipped.")
             except Exception as e:
                 st.error(f"An error occurred while processing '{file.name}': {e}")
             
-            # Update the progress bar
             progress_bar.progress((i + 1) / total_files)
 
     progress_status.text("Merge complete!")
-    
-    # After writing is done, reset the buffer's pointer to the beginning
     output_buffer.seek(0)
     return output_buffer
 
