@@ -2,6 +2,7 @@ import streamlit as st
 import subprocess
 import os
 import sys
+import shlex
 
 # --- Helper Functions ---
 
@@ -13,14 +14,16 @@ def is_tool_installed(name):
 def get_video_title(url):
     """Gets the video title using yt-dlp."""
     try:
-        command = [
+        command_list = [
             sys.executable, "-m", "yt_dlp", 
             "--get-title", 
             "--no-warnings",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
             url
         ]
-        result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
+        # Use shlex.join to safely format the command for shell=True
+        command_str = shlex.join(command_list)
+        result = subprocess.run(command_str, shell=True, capture_output=True, text=True, check=True, encoding='utf-8')
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         st.error(f"Error fetching video title: {e.stderr}")
@@ -32,7 +35,7 @@ def get_video_title(url):
 def download_audio(url, output_filename="audio.mp3"):
     """Downloads audio from a YouTube URL and converts it to MP3."""
     try:
-        command = [
+        command_list = [
             sys.executable, "-m", "yt_dlp",
             "-x",  # Extract audio
             "--audio-format", "mp3",
@@ -41,10 +44,12 @@ def download_audio(url, output_filename="audio.mp3"):
             "-o", output_filename,
             url
         ]
+        # Use shlex.join to safely format the command for shell=True
+        command_str = shlex.join(command_list)
         with st.spinner('Downloading and converting video... Please wait.'):
             # We use Popen to potentially handle long-running downloads better in future versions
             # For now, we wait for it to complete.
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(command_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
 
             if process.returncode != 0:
@@ -122,4 +127,5 @@ else:
 # Footer
 st.markdown("---")
 st.markdown("Built with ❤️ using [Streamlit](https://streamlit.io) and powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).")
+
 
