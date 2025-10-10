@@ -3,7 +3,6 @@ import pandas as pd
 import io
 import os
 
-
 def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
@@ -28,26 +27,27 @@ def merge_csv_to_excel_buffer(uploaded_files):
         total_files = len(uploaded_files)
         for i, file in enumerate(uploaded_files):
             # Update progress status for the user
-            progress_status.text(f"Processing file {i + 1}/{total_files}: {file.name}...")
-
+            progress_status.text(f"Processing file {i+1}/{total_files}: {file.name}...")
+            
             try:
                 # Before reading the file, reset its internal pointer to the beginning
                 file.seek(0)
-                df = pd.read_csv(file)
+                
+                # MODIFIED: Skip the first two rows and use the third row as the header.
+                # This is necessary for the report-style CSV format.
+                df = pd.read_csv(file, header=2)
 
                 if not df.empty:
-                    # --- Core Conversion Logic (from original script) ---
-                    # Loop through each column to attempt numeric conversion
-                    for col in df.columns:
-                        # pd.to_numeric will convert numbers, leaving non-numbers as NaN
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    # --- MODIFIED: Improved and safer conversion logic ---
+                    # This attempts to convert columns to numeric, but if a column
+                    # contains text that can't be converted, it's left as is.
+                    df = df.apply(pd.to_numeric, errors='ignore')
 
                     # --- Sheet Name Generation ---
                     # Create a descriptive sheet name from the original filename
                     sheet_base_name, _ = os.path.splitext(file.name)
                     # Sanitize the sheet name to comply with Excel's rules (e.g., max 31 chars)
-                    sheet_name = sheet_base_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace(
-                        '?', '_').replace('*', '_').replace('[', '_').replace(']', '_')
+                    sheet_name = sheet_base_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '_').replace('*', '_').replace('[', '_').replace(']', '_')
 
                     # Write the processed DataFrame to a new sheet
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -58,17 +58,16 @@ def merge_csv_to_excel_buffer(uploaded_files):
                 st.warning(f"File '{file.name}' contains no data and will be skipped.")
             except Exception as e:
                 st.error(f"An error occurred while processing '{file.name}': {e}")
-
+            
             # Update the progress bar
             progress_bar.progress((i + 1) / total_files)
 
     progress_status.text("Merge complete!")
-
+    
     # After writing is done, reset the buffer's pointer to the beginning
     # This is crucial for the download button to be able to read the buffer's content
     output_buffer.seek(0)
     return output_buffer
-
 
 # --- Streamlit Application UI ---
 
@@ -109,7 +108,7 @@ if uploaded_files and base_name:
             try:
                 # Call the main function to process the files
                 excel_buffer = merge_csv_to_excel_buffer(uploaded_files)
-
+                
                 st.success("✅ Success! Your file is ready for download.")
 
                 # Provide the download button
@@ -124,3 +123,4 @@ if uploaded_files and base_name:
                 st.error("Please check your files and try again.")
 else:
     st.info("Please upload at least one CSV file and provide an output name to proceed.")
+
