@@ -1,3 +1,4 @@
 libgl1-mesa-glx
 libx11-xcb1
 libxkbcommon-x11-0
+ffmpeg
