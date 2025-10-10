@@ -8,7 +8,7 @@ def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
     Each CSV is copied verbatim into a separate sheet. It uses a robust method to
-    handle non-standard CSV formats with title or empty rows.
+    handle non-standard CSV formats and attempts to convert numeric strings to numbers.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
@@ -30,13 +30,11 @@ def merge_csv_to_excel_buffer(uploaded_files):
                 
                 # --- A MORE ROBUST PARSING STRATEGY ---
                 # First, decode the file from bytes to a string stream
-                # This is necessary for the csv module to work with it.
                 string_io = io.StringIO(file.getvalue().decode('utf-8', errors='ignore'))
                 
                 delimiter = ',' # Default delimiter
                 try:
                     # Try to sniff the delimiter from a sample.
-                    # Reading the first line might not be enough if it's a title.
                     sample = string_io.read(2048)
                     string_io.seek(0) # Reset after reading sample
                     dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
@@ -45,13 +43,18 @@ def merge_csv_to_excel_buffer(uploaded_files):
                     st.warning(f"Could not auto-detect delimiter for '{file.name}'. Defaulting to comma (',').")
 
                 # Use the more lenient, built-in csv.reader to parse the file
-                # This handles rows with varying numbers of columns gracefully.
                 reader = csv.reader(string_io, delimiter=delimiter)
                 data = list(reader)
 
                 if data:
                     # Convert the list of lists directly into a DataFrame
                     df = pd.DataFrame(data)
+
+                    # --- NEW: Attempt to convert purely numeric strings to numbers ---
+                    for col in df.columns:
+                        # pd.to_numeric will convert valid numbers and leave non-numeric
+                        # strings (like titles or notes) alone because of errors='ignore'.
+                        df[col] = pd.to_numeric(df[col], errors='ignore')
 
                     # --- Sheet Name Generation ---
                     sheet_base_name, _ = os.path.splitext(file.name)
