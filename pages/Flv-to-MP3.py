@@ -3,7 +3,6 @@ import subprocess
 import os
 import sys
 
-
 # --- Helper Functions ---
 
 def is_tool_installed(name):
@@ -11,11 +10,16 @@ def is_tool_installed(name):
     from shutil import which
     return which(name) is not None
 
-
 def get_video_title(url):
     """Gets the video title using yt-dlp."""
     try:
-        command = [sys.executable, "-m", "yt_dlp", "--get-title", "--no-warnings", url]
+        command = [
+            sys.executable, "-m", "yt_dlp", 
+            "--get-title", 
+            "--no-warnings",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
+            url
+        ]
         result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -25,7 +29,6 @@ def get_video_title(url):
         st.error(f"An unexpected error occurred: {e}")
         return None
 
-
 def download_audio(url, output_filename="audio.mp3"):
     """Downloads audio from a YouTube URL and converts it to MP3."""
     try:
@@ -34,6 +37,7 @@ def download_audio(url, output_filename="audio.mp3"):
             "-x",  # Extract audio
             "--audio-format", "mp3",
             "--no-warnings",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
             "-o", output_filename,
             url
         ]
@@ -51,7 +55,6 @@ def download_audio(url, output_filename="audio.mp3"):
         st.error(f"An error occurred during the download process: {e}")
         return False
 
-
 # --- Streamlit App UI ---
 
 st.set_page_config(page_title="YouTube to MP3", page_icon="🎵", layout="centered")
@@ -64,7 +67,7 @@ if not is_tool_installed("ffmpeg"):
     st.error("🔴 **Error: `ffmpeg` is not installed or not in your system's PATH.**")
     st.markdown("""
         `ffmpeg` is a required dependency for converting and extracting audio. Please install it to use this app.
-
+        
         **Installation Instructions:**
         - **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add the `bin` folder to your system's PATH.
         - **macOS (using Homebrew):** Run `brew install ffmpeg` in your terminal.
@@ -73,7 +76,7 @@ if not is_tool_installed("ffmpeg"):
 else:
     # Input field for the YouTube URL
     youtube_url = st.text_input(
-        "Enter YouTube URL:",
+        "Enter YouTube URL:", 
         placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     )
 
@@ -81,10 +84,10 @@ else:
         if youtube_url:
             # Sanitize the URL a bit
             cleaned_url = youtube_url.split('&')[0]
-
+            
             # Define a temporary, unique filename for the output
             output_filename = "downloaded_audio.mp3"
-
+            
             # Clean up any previous downloads before starting
             if os.path.exists(output_filename):
                 os.remove(output_filename)
@@ -95,10 +98,9 @@ else:
                 st.write(f"**▶️ Video Found:** *{video_title}*")
                 if download_audio(cleaned_url, output_filename):
                     st.success("✅ Conversion successful!")
-
+                    
                     # Sanitize title for a valid filename
-                    safe_filename = "".join(
-                        [c for c in video_title if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
+                    safe_filename = "".join([c for c in video_title if c.isalpha() or c.isdigit() or c in ' ._-']).rstrip()
                     final_filename = f"{safe_filename}.mp3"
 
                     try:
@@ -119,5 +121,5 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown(
-    "Built with ❤️ using [Streamlit](https://streamlit.io) and powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).")
+st.markdown("Built with ❤️ using [Streamlit](https://streamlit.io) and powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).")
+
