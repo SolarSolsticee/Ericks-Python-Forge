@@ -6,8 +6,7 @@ import os
 def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
-    Each CSV becomes a separate sheet, and columns are automatically converted to numeric
-    types where possible.
+    Each CSV is copied verbatim into a separate sheet.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
@@ -33,15 +32,11 @@ def merge_csv_to_excel_buffer(uploaded_files):
                 # Before reading the file, reset its internal pointer to the beginning
                 file.seek(0)
                 
-                # MODIFIED: Skip the first two rows and use the third row as the header.
-                # This is necessary for the report-style CSV format.
-                df = pd.read_csv(file, header=2)
+                # MODIFIED: Read the entire CSV file verbatim, without assuming any header row.
+                df = pd.read_csv(file, header=None)
 
                 if not df.empty:
-                    # --- MODIFIED: Improved and safer conversion logic ---
-                    # This attempts to convert columns to numeric, but if a column
-                    # contains text that can't be converted, it's left as is.
-                    df = df.apply(pd.to_numeric, errors='ignore')
+                    # --- REMOVED: Data conversion is no longer needed for a verbatim copy. ---
 
                     # --- Sheet Name Generation ---
                     # Create a descriptive sheet name from the original filename
@@ -49,8 +44,9 @@ def merge_csv_to_excel_buffer(uploaded_files):
                     # Sanitize the sheet name to comply with Excel's rules (e.g., max 31 chars)
                     sheet_name = sheet_base_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '_').replace('*', '_').replace('[', '_').replace(']', '_')
 
-                    # Write the processed DataFrame to a new sheet
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    # MODIFIED: Write the DataFrame to the Excel sheet without adding an
+                    # index or a header, ensuring a true verbatim copy.
+                    df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
                 else:
                     st.warning(f"File '{file.name}' is empty and will be skipped.")
 
@@ -77,8 +73,7 @@ st.set_page_config(layout="centered", page_title="CSV to Excel Merger")
 st.title("📊 CSV to Excel Merger & Converter")
 st.markdown("""
 This tool helps you combine multiple CSV files into a single Excel workbook.
-Each CSV file will be placed in its own sheet. The tool also automatically
-converts text columns into numbers (integers or decimals) wherever possible.
+Each CSV file will be placed in its own sheet, preserving the original layout.
 """)
 
 # --- Step 1: File Upload ---
@@ -104,7 +99,7 @@ if uploaded_files and base_name:
     st.info(f"Ready to merge **{len(uploaded_files)}** file(s) into **`{base_name}-refined.xlsx`**.")
 
     if st.button(f"🚀 Merge Files Now", type="primary"):
-        with st.spinner('Working our magic... Merging files and converting data...'):
+        with st.spinner('Working our magic... Copying files...'):
             try:
                 # Call the main function to process the files
                 excel_buffer = merge_csv_to_excel_buffer(uploaded_files)
