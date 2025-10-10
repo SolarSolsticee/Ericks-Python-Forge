@@ -8,7 +8,8 @@ def merge_csv_to_excel_buffer(uploaded_files):
     """
     Merges multiple uploaded CSV files into a single Excel file within an in-memory buffer.
     Each CSV is copied verbatim into a separate sheet. It uses a robust method to
-    handle non-standard CSV formats and attempts to convert numeric strings to numbers.
+    handle non-standard CSV formats and converts numeric strings to numbers on a 
+    cell-by-cell basis.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
@@ -29,32 +30,40 @@ def merge_csv_to_excel_buffer(uploaded_files):
                 file.seek(0)
                 
                 # --- A MORE ROBUST PARSING STRATEGY ---
-                # First, decode the file from bytes to a string stream
                 string_io = io.StringIO(file.getvalue().decode('utf-8', errors='ignore'))
                 
                 delimiter = ',' # Default delimiter
                 try:
-                    # Try to sniff the delimiter from a sample.
                     sample = string_io.read(2048)
-                    string_io.seek(0) # Reset after reading sample
+                    string_io.seek(0) 
                     dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
                     delimiter = dialect.delimiter
                 except csv.Error:
                     st.warning(f"Could not auto-detect delimiter for '{file.name}'. Defaulting to comma (',').")
 
-                # Use the more lenient, built-in csv.reader to parse the file
                 reader = csv.reader(string_io, delimiter=delimiter)
                 data = list(reader)
 
                 if data:
-                    # Convert the list of lists directly into a DataFrame
-                    df = pd.DataFrame(data)
+                    # --- NEW: Cell-by-cell conversion for mixed data types ---
+                    converted_data = []
+                    for row in data:
+                        new_row = []
+                        for item in row:
+                            # Try to convert each item to a float if possible
+                            try:
+                                # Don't convert empty strings, leave them as is
+                                if item.strip() != '':
+                                    new_row.append(float(item))
+                                else:
+                                    new_row.append(item)
+                            except ValueError:
+                                # If conversion fails, it's text. Keep the original.
+                                new_row.append(item)
+                        converted_data.append(new_row)
 
-                    # --- NEW: Attempt to convert purely numeric strings to numbers ---
-                    for col in df.columns:
-                        # pd.to_numeric will convert valid numbers and leave non-numeric
-                        # strings (like titles or notes) alone because of errors='ignore'.
-                        df[col] = pd.to_numeric(df[col], errors='ignore')
+                    # Create the DataFrame from the data with mixed types
+                    df = pd.DataFrame(converted_data)
 
                     # --- Sheet Name Generation ---
                     sheet_base_name, _ = os.path.splitext(file.name)
