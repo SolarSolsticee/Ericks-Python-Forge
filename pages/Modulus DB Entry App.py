@@ -16,6 +16,7 @@ from excel_modulus import (
     fit_modulus,
     sanitize_sheet_name,
     update_database,
+    check_sheet_exists,
     DEFAULT_WIDTH_MM,
 )
 
@@ -176,7 +177,84 @@ if selected_sheet:
 
         notes = st.text_area("Notes", placeholder="e.g. 50% infill", key='input_notes')
 
+        # --- NEW SAVE LOGIC ---
+        # Initialize session state for confirmation if not present
+        if "confirm_save" not in st.session_state:
+            st.session_state["confirm_save"] = False
+
+        # The primary button
         submit = st.button("Calculate & Save to DB", type="primary")
+
+        # Logic: User Clicks Submit -> Check DB -> Either Save or Ask Confirm
+        if submit:
+            exists = check_sheet_exists(Path(output_csv), sanitized_name)
+            if exists:
+                st.session_state["confirm_save"] = True
+            else:
+                # No conflict, save immediately (trigger via a flag to run the block below)
+                st.session_state["do_save"] = True
+
+    # Render Confirmation Warning if flag is set
+        if st.session_state["confirm_save"]:
+            st.warning(f"⚠️ Data for **{sanitized_name}** already exists in the database.")
+            col_conf_1, col_conf_2 = st.columns(2)
+            with col_conf_1:
+                if st.button("✅ Yes, Overwrite"):
+                    st.session_state["do_save"] = True
+                    st.session_state["confirm_save"] = False # Reset
+            with col_conf_2:
+                if st.button("❌ Cancel"):
+                    st.session_state["confirm_save"] = False
+                    st.info("Save cancelled.")
+
+            # 4. Actual Saving Block (Runs if safe or if confirmed)
+    if st.session_state.get("do_save", False):
+        rows = []
+        summary_metrics = []
+        
+        for p in plot_data:
+            strain = p['strain_raw']
+            stress = p['stress_raw']
+            
+            limit_min = strain_min_pct / 100.0
+            limit_max = strain_max_pct / 100.0
+            
+            mask = (strain >= limit_min) & (strain <= limit_max)
+            fit = fit_modulus(strain[mask], stress[mask])
+            modulus_pa = fit['slope']
+            modulus_gpa = modulus_pa / 1e9 if not np.isnan(modulus_pa) else 0.0
+            
+            rows.append({
+                'timestamp': datetime.utcnow().isoformat(),
+                'workbook_filename': filename,
+                'sheet_name_raw': selected_sheet,
+                'sheet_name_sanitized': sanitized_name,
+                'sample_name': f'{sanitized_name}-{p["id"]}',
+                'sample_index': p['id'],
+                'initial_length_mm': initial_length_mm,
+                'thickness_mm': thickness_mm,
+                'width_mm': width_mm,
+                'area_mm2': width_mm * thickness_mm,
+                'modulus_pa': modulus_pa,
+                'modulus_gpa': modulus_gpa,
+                'r_value': fit['rvalue'],
+                'n_points': fit['n'],
+                'strain_fit_min': limit_min,
+                'strain_fit_max': limit_max,
+                'notes': notes,
+                'tags': final_tag_string, 
+            })
+            summary_metrics.append(modulus_gpa)
+
+        update_database(Path(output_csv), rows)
+        
+        # Reset the trigger
+        st.session_state["do_save"] = False
+        
+        avg_mod = np.nanmean(summary_metrics)
+        st.success(f"Saved {len(rows)} samples to `{output_csv}`")
+        st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
+        st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
 
     with col_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -240,4 +318,5 @@ if selected_sheet:
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa", delta=f"± {std_mod:.2f}")
 
         # Show table with tags
+
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
