@@ -181,9 +181,7 @@ if selected_sheet:
         if "confirm_save" not in st.session_state:
             st.session_state["confirm_save"] = False
 
-        # The primary button
         submit = st.button("Calculate & Save to DB", type="primary")
-
         # Logic: User Clicks Submit -> Check DB -> Either Save or Ask Confirm
         if submit:
             exists = check_sheet_exists(Path(output_csv), sanitized_name)
@@ -205,7 +203,6 @@ if selected_sheet:
                 if st.button("❌ Cancel"):
                     st.session_state["confirm_save"] = False
                     st.info("Save cancelled.")
-        submit = st.button("Calculate & Save to DB", type="primary")
 
     with col_plot:
         fig, ax = plt.subplots(figsize=(8, 5))
