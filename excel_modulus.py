@@ -154,4 +154,29 @@ def update_database(path: Path, new_rows: list):
     else:
         final_df = new_df
 
+
     final_df.to_csv(path, index=False)
+
+def check_sheet_exists(path: Path, sheet_name_sanitized: str) -> bool:
+    """Checks if a sheet name already exists in the CSV."""
+    if not path.exists():
+        return False
+    try:
+        # Read only the sheet_name column to be fast
+        df = pd.read_csv(path, usecols=['sheet_name_sanitized'])
+        return sheet_name_sanitized in df['sheet_name_sanitized'].values
+    except Exception:
+        return False
+
+def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tag_string: str):
+    """Updates the tags for all samples belonging to a specific sheet."""
+    if not path.exists():
+        return
+    
+    df = pd.read_csv(path)
+    
+    # Update tags where the sheet name matches
+    mask = df['sheet_name_sanitized'] == sheet_name_sanitized
+    if mask.any():
+        df.loc[mask, 'tags'] = new_tag_string
+        df.to_csv(path, index=False)
