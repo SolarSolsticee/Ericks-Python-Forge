@@ -16,15 +16,35 @@ st.set_page_config(page_title="Modulus Database Viewer", layout="wide")
 CSV_PATH = Path('modulus_db.csv')
 
 def load_data():
-    # This now works on Cloud (fetching from GitHub) AND Local
+    # 1. Load from Cloud or Local
     df = get_current_db(CSV_PATH)
     
+    # 2. Check if empty
     if df.empty:
-        return pd.DataFrame()
-        
+        return pd.DataFrame(columns=['display_name', 'tags', 'notes', 'thickness_mm', 'modulus_gpa', 'sheet_name_sanitized'])
+
+    # 3. Ensure string types for safety
+    if 'tags' not in df.columns: df['tags'] = ''
+    if 'notes' not in df.columns: df['notes'] = ''
+    
     df['tags'] = df['tags'].fillna('').astype(str)
     df['notes'] = df['notes'].fillna('').astype(str)
-    # ... rest of your cleaning logic ...
+    
+    # 4. Create the 'display_name' column (The missing link!)
+    def clean_name(name):
+        name = str(name)
+        # Remove "ASTM_D882_results_" prefix case-insensitive
+        name = re.sub(r'(?i)astm_d882_results_', '', name)
+        # Remove trailing separators like "_", "-"
+        name = re.sub(r'[-_]+$', '', name)
+        return name
+
+    if 'sheet_name_sanitized' in df.columns:
+        df['display_name'] = df['sheet_name_sanitized'].apply(clean_name)
+    else:
+        # Fallback if the CSV is malformed
+        df['display_name'] = "Unknown"
+
     return df
 
 df_full = load_data()
@@ -201,4 +221,5 @@ with tab_edit:
                     st.success(f"Updated tags for **{target_sheet_id}** to: {final_tag_str}")
                     st.cache_data.clear() # Clear cache so viewer reloads new data
                     # st.rerun() # Optional: force reload page
+
 
