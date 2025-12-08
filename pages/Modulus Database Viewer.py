@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 import re
+from excel_modulus import get_current_db # Import the new function
 
 # Import the update logic
 from excel_modulus import update_tags_for_sheet
@@ -15,19 +16,15 @@ st.set_page_config(page_title="Modulus Database Viewer", layout="wide")
 CSV_PATH = Path('modulus_db.csv')
 
 def load_data():
-    if not CSV_PATH.exists():
+    # This now works on Cloud (fetching from GitHub) AND Local
+    df = get_current_db(CSV_PATH)
+    
+    if df.empty:
         return pd.DataFrame()
-    df = pd.read_csv(CSV_PATH)
+        
     df['tags'] = df['tags'].fillna('').astype(str)
     df['notes'] = df['notes'].fillna('').astype(str)
-    
-    def clean_name(name):
-        name = str(name)
-        name = re.sub(r'(?i)astm_d882_results_', '', name)
-        name = re.sub(r'[-_]+$', '', name)
-        return name
-
-    df['display_name'] = df['sheet_name_sanitized'].apply(clean_name)
+    # ... rest of your cleaning logic ...
     return df
 
 df_full = load_data()
@@ -204,3 +201,4 @@ with tab_edit:
                     st.success(f"Updated tags for **{target_sheet_id}** to: {final_tag_str}")
                     st.cache_data.clear() # Clear cache so viewer reloads new data
                     # st.rerun() # Optional: force reload page
+
