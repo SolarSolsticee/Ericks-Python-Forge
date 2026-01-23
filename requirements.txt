@@ -16,4 +16,5 @@ seaborn
 yt-dlp
 pdfplumber
 PyGithub
+json
 
