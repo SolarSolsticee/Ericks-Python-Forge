@@ -18,6 +18,7 @@ from excel_modulus import (
     sanitize_sheet_name,
     update_database,
     check_sheet_exists,
+    get_current_db,  # <--- Needed for tag autocomplete
     DEFAULT_WIDTH_MM,
 )
 
@@ -26,7 +27,6 @@ st.set_page_config(page_title="Spec-1 Modulus Pipeline", layout='wide')
 # --- SIDEBAR: Configuration ---
 st.sidebar.title("Configuration")
 
-# Debug connection to ensure secrets are working
 if "github" in st.secrets:
     st.sidebar.success("✅ Connected to GitHub")
 else:
@@ -71,7 +71,6 @@ if selected_sheet != st.session_state['current_sheet']:
     st.session_state['input_notes'] = ""
     st.session_state['selected_tags'] = [] 
     st.session_state['new_tags'] = ""
-    # Reset confirmation state
     if "confirm_save" in st.session_state:
         del st.session_state["confirm_save"]
 
@@ -104,13 +103,12 @@ if selected_sheet:
     with c2:
         thickness_mm = st.number_input('Thickness [mm]', step=0.01, format="%.2f", key='input_thick')
 
-    # --- PHYSICS SETTINGS (DIC & Logging) ---
+    # --- PHYSICS SETTINGS ---
     st.divider()
     st.subheader("Physics Settings")
     c_phys1, c_phys2 = st.columns(2)
     
     with c_phys1:
-        # Check if Column E (DIC) has valid data
         dic_avail = False
         if 'dic_strain' in data.columns:
             dic_avail = data['dic_strain'].notna().sum() > 0
@@ -132,16 +130,13 @@ if selected_sheet:
         )
     st.divider()
 
-    # 3. Compute Data (Before Plotting)
+    # 3. Compute Data
     plot_data = []
     for i, blk in enumerate(blocks, start=1):
         ext = blk['extension'].values
         load = blk['primary_load'].values
-        
-        # Get DIC column if it exists, else NaN
         dic = blk.get('dic_strain', pd.Series([np.nan]*len(blk))).values
         
-        # Calculate Physics
         strain, stress = compute_stress_strain(ext, load, dic, initial_length_mm, thickness_mm, width_mm, use_dic=use_dic)
         
         plot_data.append({
@@ -152,19 +147,13 @@ if selected_sheet:
             'stress_mpa': stress / 1e6
         })
 
-    # 4. Layout: Controls vs Plot
+    # 4. Layout
     st.subheader("Strain Window Selection")
     col_controls, col_plot = st.columns([1, 2])
 
     with col_controls:
         st.markdown("### Settings")
         
-        # Helper to get tags from CSV
-        def get_existing_tags(csv_path):
-            # This is a bit tricky with the hybrid DB, but we try reading it
-            # We skip extensive error handling here for brevity
-            return [] 
-
         strain_min_pct = st.number_input('Strain Min (%)', step=0.1, key='input_s_min')
         strain_max_pct = st.number_input('Strain Max (%)', step=0.1, key='input_s_max')
         preview = st.checkbox("Show Window Lines", value=True)
@@ -172,10 +161,32 @@ if selected_sheet:
         st.divider()
         st.markdown("### Metadata")
         
-        # Tagging System
-        # We use a simple text input for new tags + multiselect if we had tags loaded
-        # For simplicity in this robust version, we use text input + basic multiselect
-        new_tags_input = st.text_input("Tags (comma separated)", placeholder="e.g. annealed, supplier-B", key='new_tags')
+        # --- TAG LOGIC (RESTORED) ---
+        # 1. Fetch existing tags
+        existing_opts = []
+        try:
+            # We call the DB reader to find what tags we have used before
+            db_df = get_current_db(Path(output_csv))
+            if not db_df.empty and 'tags' in db_df.columns:
+                all_tags = db_df['tags'].dropna().astype(str).str.split(',')
+                flat_tags = [t.strip() for sublist in all_tags for t in sublist if t.strip()]
+                existing_opts = sorted(list(set(flat_tags)))
+        except Exception:
+            pass # Fail silently if DB not reachable yet
+
+        # 2. Multiselect for known tags
+        selected_tags = st.multiselect(
+            "Select existing tags", 
+            options=existing_opts,
+            key='selected_tags'
+        )
+        
+        # 3. Text input for new tags
+        new_tags_input = st.text_input(
+            "Add new tags (comma separated)", 
+            placeholder="e.g. annealed, supplier-B",
+            key='new_tags'
+        )
         
         notes = st.text_area("Notes", placeholder="e.g. 50% infill", key='input_notes')
         
@@ -223,8 +234,13 @@ if selected_sheet:
         rows = []
         summary_metrics = []
         
-        # Process Tags
-        final_tag_string = new_tags_input # simplified for robustness
+        # COMBINE TAGS (Dropdown + Text)
+        final_tag_list = selected_tags.copy()
+        if new_tags_input:
+            manual_tags = [t.strip() for t in new_tags_input.split(',') if t.strip()]
+            final_tag_list.extend(manual_tags)
+        # Deduplicate and join
+        final_tag_string = ", ".join(sorted(list(set(final_tag_list))))
         
         for p in plot_data:
             strain = p['strain_raw']
@@ -238,7 +254,6 @@ if selected_sheet:
             modulus_pa = fit['slope']
             modulus_gpa = modulus_pa / 1e9 if not np.isnan(modulus_pa) else 0.0
             
-            # Serialize Curves
             curve_strain_str = ""
             curve_stress_str = ""
             if save_curves:
@@ -263,14 +278,14 @@ if selected_sheet:
                 'strain_fit_min': limit_min,
                 'strain_fit_max': limit_max,
                 'notes': notes,
-                'tags': final_tag_string,
+                'tags': final_tag_string, # <--- Uses the combined string
                 'curve_strain': curve_strain_str,
                 'curve_stress': curve_stress_str,
             })
             summary_metrics.append(modulus_gpa)
 
         update_database(Path(output_csv), rows)
-        st.session_state["do_save"] = False # Reset trigger
+        st.session_state["do_save"] = False
         
         avg_mod = np.nanmean(summary_metrics)
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
