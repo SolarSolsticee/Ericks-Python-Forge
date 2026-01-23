@@ -227,27 +227,34 @@ with tab_edit:
 with tab_curves:
     st.subheader("Compare Stress-Strain Curves")
     
-    # 1. Filter Selection
-    # Allow user to pick specific samples from the filtered dataset
+    # 1. Check for data
     if 'curve_strain' not in df_filtered.columns:
-        st.warning("No curve data found in database. Enable 'Log Stress/Strain Curves' in app.py and save new data.")
+        st.warning("No curve data found. Enable 'Log Stress/Strain Curves' in app.py and save new data.")
     else:
-        # Get list of samples that actually have curve data (string length > 2 usually implies "[]")
+        # Filter for rows that actually have curve data
         has_curve = df_filtered[df_filtered['curve_strain'].str.len() > 5].copy()
         
         if has_curve.empty:
             st.info("No saved curves found in the current filtered selection.")
         else:
-            # Create a selection box
-            # We construct a label that includes Material + Sample ID
-            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+            # 2. Controls
+            c_sel, c_tog = st.columns([3, 1])
             
-            selected_curves = st.multiselect(
-                "Select Samples to Graph", 
-                options=has_curve['select_label'].unique(),
-                default=has_curve['select_label'].head(3).tolist() # Select first 3 by default
-            )
+            with c_sel:
+                has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+                selected_curves = st.multiselect(
+                    "Select Samples to Graph", 
+                    options=has_curve['select_label'].unique(),
+                    default=has_curve['select_label'].head(3).tolist()
+                )
             
+            with c_tog:
+                st.write("") # Spacer
+                st.write("") # Spacer
+                # THE NEW TOGGLE
+                show_raw = st.toggle("Show Raw Force / Ext", value=False, 
+                                     help="Plots Load (N) vs Extension (mm) instead of Stress (MPa) vs Strain (%).")
+
             if selected_curves:
                 fig, ax = plt.subplots(figsize=(10, 6))
                 
@@ -256,28 +263,48 @@ with tab_curves:
                     row = has_curve[has_curve['select_label'] == label].iloc[0]
                     
                     try:
-                        # DE-SERIALIZE JSON
-                        strain_arr = np.array(json.loads(row['curve_strain']))
-                        stress_arr = np.array(json.loads(row['curve_stress']))
+                        # De-serialize JSON arrays
+                        strain_arr = np.array(json.loads(row['curve_strain'])) # Unitless (mm/mm)
+                        stress_arr = np.array(json.loads(row['curve_stress'])) # Pascals (Pa)
                         
-                        # Plot (Convert to %, MPa for display)
-                        ax.plot(strain_arr * 100, stress_arr / 1e6, label=label)
+                        # LOGIC: RAW vs ENGINEERING
+                        if show_raw:
+                            # RECONSTRUCT RAW DATA
+                            # Force F = Stress * Area
+                            area_mm2 = row.get('area_mm2', 1.0)
+                            if pd.isna(area_mm2): area_mm2 = 1.0
+                            area_m2 = area_mm2 * 1e-6
+                            y_data = stress_arr * area_m2  # Newtons
+                            
+                            # Extension dL = Strain * L0
+                            L0_mm = row.get('initial_length_mm', 100.0)
+                            if pd.isna(L0_mm): L0_mm = 100.0
+                            x_data = strain_arr * L0_mm    # mm
+                            
+                        else:
+                            # STANDARD ENGINEERING CURVES
+                            y_data = stress_arr / 1e6      # MPa
+                            x_data = strain_arr * 100      # Percent %
+
+                        # Plot
+                        ax.plot(x_data, y_data, label=label)
                         
                     except Exception as e:
                         st.error(f"Error plotting {label}: {e}")
 
-                ax.set_xlabel("Strain (%)")
-                ax.set_ylabel("Stress (MPa)")
-                ax.set_title("Comparative Stress-Strain Curves")
+                # Dynamic Axis Labels
+                if show_raw:
+                    ax.set_xlabel("Extension (mm)")
+                    ax.set_ylabel("Load Force (N)")
+                    ax.set_title("Raw Load-Extension Curves")
+                else:
+                    ax.set_xlabel("Strain (%)")
+                    ax.set_ylabel("Stress (MPa)")
+                    ax.set_title("Comparative Stress-Strain Curves")
+                
                 ax.legend()
                 ax.grid(True, alpha=0.3)
-                
-                # 
-                
                 st.pyplot(fig)
                 
-                # Download Button for the plotted data?
-                # Optional: create a new CSV of just these curves for external analysis
             else:
                 st.info("Select samples above to generate the plot.")
-
