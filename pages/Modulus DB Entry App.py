@@ -117,19 +117,47 @@ if selected_sheet:
     with c2:
         thickness_mm = st.number_input('Thickness [mm]', step=0.01, format="%.2f", key='input_thick')
 
-    # 3. Interactive Plotting & Window Selection
-    st.subheader("Strain Window Selection")
+    # 1. Parse Sheet
+    try:
+        header_row = find_header_row(df_raw)
+        data = extract_extension_load(df_raw, header_row)
+        blocks = split_samples_by_smart_markers(data)
+    except Exception as e:
+        st.error(f"Could not parse sheet. {e}")
+        st.stop()
 
+    # --- CONTROLS ---
+    st.subheader("Physics Settings")
+    c_phys1, c_phys2 = st.columns(2)
+    with c_phys1:
+        # Check if DIC column has data
+        dic_avail = data['dic_strain'].notna().sum() > 0
+        use_dic = st.checkbox("Use DIC Strain (Column E)", value=False, disabled=not dic_avail, 
+                              help="If checked, uses Column E directly as strain. Ignores Initial Length.")
+        if use_dic and not dic_avail:
+            st.warning("Column E appears empty. DIC mode may fail.")
+            
+    with c_phys2:
+        save_curves = st.checkbox("Log Stress/Strain Curves to DB", value=True,
+                                  help="Saves the full x,y data points to the database for future graphing.")
+
+    # 3. Interactive Plotting & Window Selection
+st.subheader("Strain Window Selection")
+    
     plot_data = []
     for i, blk in enumerate(blocks, start=1):
         ext = blk['extension'].values
         load = blk['primary_load'].values
-        strain, stress = compute_stress_strain(ext, load, initial_length_mm, thickness_mm, width_mm)
+        dic = blk.get('dic_strain', pd.Series([np.nan]*len(blk))).values # Safe get
+        
+        # PASS DIC FLAG HERE
+        strain, stress = compute_stress_strain(ext, load, dic, initial_length_mm, thickness_mm, width_mm, use_dic=use_dic)
+        
         plot_data.append({
-            'id': i,
-            'strain_raw': strain,
+            'id': i, 
+            'strain_raw': strain, 
             'stress_raw': stress,
-            'strain_pct': strain * 100,
+            'strain_pct': strain * 100, 
             'stress_mpa': stress / 1e6
         })
 
@@ -237,6 +265,14 @@ if selected_sheet:
                 modulus_pa = fit['slope']
                 modulus_gpa = modulus_pa / 1e9 if not np.isnan(modulus_pa) else 0.0
 
+                curve_strain_str = ""
+                curve_stress_str = ""
+                if save_curves:
+                    # Save as JSON string "[0.01, 0.02, ...]"
+                    # Rounding to 6 decimals saves huge amounts of space
+                    curve_strain_str = json.dumps(np.round(p['strain_raw'], 6).tolist())
+                    curve_stress_str = json.dumps(np.round(p['stress_raw'], 0).tolist())
+
                 rows.append({
                     'timestamp': datetime.utcnow().isoformat(),
                     'workbook_filename': filename,
@@ -256,6 +292,8 @@ if selected_sheet:
                     'strain_fit_max': limit_max,
                     'notes': notes,
                     'tags': final_tag_string,
+                    'curve_strain': curve_strain_str,  # <--- Add this
+                    'curve_stress': curve_stress_str,  # <--- Add this
                 })
                 summary_metrics.append(modulus_gpa)
 
@@ -268,3 +306,4 @@ if selected_sheet:
             st.success(f"Saved {len(rows)} samples to `{output_csv}`")
             st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
             st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
