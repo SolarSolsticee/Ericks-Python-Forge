@@ -15,6 +15,7 @@ xlsxwriter
 seaborn
 yt-dlp
 pdfplumber
-PyGithub
+github
 json
+
 
