@@ -145,24 +145,24 @@ if selected_sheet:
     # 3. Interactive Plotting & Window Selection
 st.subheader("Strain Window Selection")
     
-    plot_data = []
-    for i, blk in enumerate(blocks, start=1):
-        ext = blk['extension'].values
-        load = blk['primary_load'].values
-        
-        # Safe get for DIC column (handles if it's missing)
-        dic = blk.get('dic_strain', pd.Series([np.nan]*len(blk))).values
-        
-        # PASS THE NEW 'use_dic' FLAG HERE
-        strain, stress = compute_stress_strain(ext, load, dic, initial_length_mm, thickness_mm, width_mm, use_dic=use_dic)
-        
-        plot_data.append({
-            'id': i, 
-            'strain_raw': strain, 
-            'stress_raw': stress,
-            'strain_pct': strain * 100, 
-            'stress_mpa': stress / 1e6
-        })
+plot_data = []
+for i, blk in enumerate(blocks, start=1):
+    ext = blk['extension'].values
+    load = blk['primary_load'].values
+    
+    # Safe get for DIC column (handles if it's missing)
+    dic = blk.get('dic_strain', pd.Series([np.nan]*len(blk))).values
+    
+    # PASS THE NEW 'use_dic' FLAG HERE
+    strain, stress = compute_stress_strain(ext, load, dic, initial_length_mm, thickness_mm, width_mm, use_dic=use_dic)
+    
+    plot_data.append({
+        'id': i, 
+        'strain_raw': strain, 
+        'stress_raw': stress,
+        'strain_pct': strain * 100, 
+        'stress_mpa': stress / 1e6
+    })
 
     col_controls, col_plot = st.columns([1, 2])
 
@@ -309,6 +309,7 @@ st.subheader("Strain Window Selection")
             st.success(f"Saved {len(rows)} samples to `{output_csv}`")
             st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
             st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
 
 
