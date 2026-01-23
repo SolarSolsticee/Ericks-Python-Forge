@@ -6,6 +6,7 @@ import seaborn as sns
 from pathlib import Path
 import re
 from excel_modulus import get_current_db # Import the new function
+import json
 
 # Import the update logic
 from excel_modulus import update_tags_for_sheet
@@ -100,8 +101,8 @@ col2.metric("Unique Materials", df_filtered['display_name'].nunique())
 col3.metric("Global Avg Modulus", f"{df_filtered['modulus_gpa'].mean():.2f} GPa")
 
 # ADDED NEW TAB: "Edit Tags"
-tab_overview, tab_compare, tab_calculator, tab_edit = st.tabs(
-    ["📊 Overview & Charts", "📋 Raw Data", "🧮 % Difference Calculator", "✏️ Edit Tags"]
+tab_overview, tab_compare, tab_calculator, tab_edit, tab_curves = st.tabs(
+    ["📊 Overview", "📋 Raw Data", "🧮 Calculator", "✏️ Edit Tags", "📈 Curve Compare"]
 )
 
 # ... [Keep Tab 1, 2, and 3 contents EXACTLY as they were in the previous version] ...
@@ -222,4 +223,61 @@ with tab_edit:
                     st.cache_data.clear() # Clear cache so viewer reloads new data
                     # st.rerun() # Optional: force reload page
 
+# === TAB 5: CURVE COMPARE ===
+with tab_curves:
+    st.subheader("Compare Stress-Strain Curves")
+    
+    # 1. Filter Selection
+    # Allow user to pick specific samples from the filtered dataset
+    if 'curve_strain' not in df_filtered.columns:
+        st.warning("No curve data found in database. Enable 'Log Stress/Strain Curves' in app.py and save new data.")
+    else:
+        # Get list of samples that actually have curve data (string length > 2 usually implies "[]")
+        has_curve = df_filtered[df_filtered['curve_strain'].str.len() > 5].copy()
+        
+        if has_curve.empty:
+            st.info("No saved curves found in the current filtered selection.")
+        else:
+            # Create a selection box
+            # We construct a label that includes Material + Sample ID
+            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+            
+            selected_curves = st.multiselect(
+                "Select Samples to Graph", 
+                options=has_curve['select_label'].unique(),
+                default=has_curve['select_label'].head(3).tolist() # Select first 3 by default
+            )
+            
+            if selected_curves:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Iterate and Plot
+                for label in selected_curves:
+                    row = has_curve[has_curve['select_label'] == label].iloc[0]
+                    
+                    try:
+                        # DE-SERIALIZE JSON
+                        strain_arr = np.array(json.loads(row['curve_strain']))
+                        stress_arr = np.array(json.loads(row['curve_stress']))
+                        
+                        # Plot (Convert to %, MPa for display)
+                        ax.plot(strain_arr * 100, stress_arr / 1e6, label=label)
+                        
+                    except Exception as e:
+                        st.error(f"Error plotting {label}: {e}")
+
+                ax.set_xlabel("Strain (%)")
+                ax.set_ylabel("Stress (MPa)")
+                ax.set_title("Comparative Stress-Strain Curves")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                
+                # 
+                
+                st.pyplot(fig)
+                
+                # Download Button for the plotted data?
+                # Optional: create a new CSV of just these curves for external analysis
+            else:
+                st.info("Select samples above to generate the plot.")
 
