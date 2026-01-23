@@ -40,13 +40,38 @@ def push_csv_to_github(filename, df, commit_message):
     branch = st.secrets["github"]["branch"]
     csv_content = df.to_csv(index=False)
     
+    # Clean filename (API dislikes leading ./)
+    filename = str(filename).lstrip("./")
+
     try:
-        # Try to get existing file to update it
+        # 1. Try to fetch the existing file (we NEED the SHA to update)
         contents = repo.get_contents(filename, ref=branch)
-        repo.update_file(contents.path, commit_message, csv_content, contents.sha, branch=branch)
-    except GithubException:
-        # File doesn't exist, create it
-        repo.create_file(filename, commit_message, csv_content, branch=branch)
+        
+        # PyGithub can return a list if the path implies a directory, handle that safety case
+        if isinstance(contents, list):
+            contents = contents[0]
+
+        # 2. File exists -> Update it using the fetched SHA
+        repo.update_file(
+            path=contents.path,
+            message=commit_message,
+            content=csv_content,
+            sha=contents.sha, # <--- The critical missing piece in the error
+            branch=branch
+        )
+        
+    except GithubException as e:
+        if e.status == 404:
+            # 3. File not found (404) -> Create new file (no SHA needed)
+            repo.create_file(
+                path=filename,
+                message=commit_message,
+                content=csv_content,
+                branch=branch
+            )
+        else:
+            # 4. Some other error (Permissions, etc.) -> Raise it so we see it
+            raise e
 
 # --- CORE LOGIC ---
 
@@ -218,4 +243,5 @@ def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tag_string:
     if mask.any():
         df.loc[mask, 'tags'] = new_tag_string
         save_db(path, df, commit_msg=f"Update tags for {sheet_name_sanitized}")
+
 
