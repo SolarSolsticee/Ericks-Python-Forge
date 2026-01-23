@@ -244,4 +244,29 @@ def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tag_string:
         df.loc[mask, 'tags'] = new_tag_string
         save_db(path, df, commit_msg=f"Update tags for {sheet_name_sanitized}")
 
+def delete_samples_from_db(path: Path, sample_names_to_delete: list):
+    """
+    Removes rows where 'sample_name' matches the provided list.
+    Works for both Local file and GitHub Cloud.
+    """
+    df = get_current_db(path)
+    if df.empty:
+        return
+    
+    # Check if 'sample_name' exists (it should)
+    if 'sample_name' not in df.columns:
+        return
+
+    # Filter out the bad rows
+    # We keep rows where sample_name is NOT in the deletion list
+    initial_count = len(df)
+    df_new = df[~df['sample_name'].isin(sample_names_to_delete)]
+    final_count = len(df_new)
+    
+    deleted_count = initial_count - final_count
+    
+    if deleted_count > 0:
+        save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
+
+
 
