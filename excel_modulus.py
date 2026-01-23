@@ -6,6 +6,7 @@ from scipy.stats import linregress
 import streamlit as st
 from github import Github, GithubException
 from io import StringIO
+import json
 
 DEFAULT_WIDTH_MM = 25.4
 
@@ -72,10 +73,25 @@ def find_header_row(df: pd.DataFrame) -> int:
     raise ValueError('Header row with "Extension" and "Primary Load" not found in first 100 rows.')
 
 def extract_extension_load(df: pd.DataFrame, header_row: int) -> pd.DataFrame:
-    data = df.iloc[header_row+1:, [2, 3]].copy()
-    data.columns = ['extension', 'primary_load']
+    """
+    Extracts Extension (Col C), Load (Col D), and optionally DIC Strain (Col E).
+    """
+    # We now try to read 3 columns: C (idx 2), D (idx 3), E (idx 4)
+    # We slice up to column 5 to ensure we get E if it exists
+    data = df.iloc[header_row+1:, 2:5].copy()
+    
+    # Standardize column names based on how many columns we actually found
+    if data.shape[1] >= 3:
+        data.columns = ['extension', 'primary_load', 'dic_strain']
+    else:
+        data.columns = ['extension', 'primary_load']
+        data['dic_strain'] = np.nan # Placeholder if missing
+
+    # Convert to numeric
     data['extension'] = pd.to_numeric(data['extension'], errors='coerce')
     data['primary_load'] = pd.to_numeric(data['primary_load'], errors='coerce')
+    data['dic_strain'] = pd.to_numeric(data['dic_strain'], errors='coerce')
+    
     return data.reset_index(drop=True)
 
 def split_samples_by_smart_markers(data: pd.DataFrame) -> list:
@@ -93,13 +109,37 @@ def split_samples_by_smart_markers(data: pd.DataFrame) -> list:
         blocks.append(data.loc[current_block_indices].reset_index(drop=True))
     return blocks
 
-def compute_stress_strain(extension_mm, load_n, initial_length_mm, thickness_mm, width_mm=DEFAULT_WIDTH_MM):
+def compute_stress_strain(extension_mm, load_n, dic_strain_raw, initial_length_mm, thickness_mm, width_mm, use_dic=False):
+    """
+    Computes Stress and Strain.
+    If use_dic is True, uses the raw 'dic_strain' column directly (no L0 division).
+    """
     area_mm2 = width_mm * thickness_mm
     area_m2 = area_mm2 * 1e-6 
-    if area_m2 == 0 or initial_length_mm == 0:
-        return np.zeros_like(extension_mm), np.zeros_like(load_n)
-    strain = np.array(extension_mm, dtype=float) / float(initial_length_mm)
+    
+    if area_m2 == 0:
+        return np.zeros_like(load_n), np.zeros_like(load_n)
+
+    # STRESS IS ALWAYS LOAD / AREA
     stress = np.array(load_n, dtype=float) / area_m2
+    
+    # STRAIN LOGIC
+    if use_dic:
+        # DIC data is already Strain (unitless or %)
+        # Assumption: DIC data is usually standard strain (mm/mm). 
+        # If it's percent, the user might need to divide by 100, but usually raw DIC is unitless.
+        strain = np.array(dic_strain_raw, dtype=float)
+        
+        # Check for NaNs in DIC column which would break the plot
+        if np.all(np.isnan(strain)):
+            # Fallback if user checked box but col is empty
+            return np.zeros_like(stress), stress
+    else:
+        # Standard Machine Extension / L0
+        if initial_length_mm == 0:
+            return np.zeros_like(extension_mm), stress
+        strain = np.array(extension_mm, dtype=float) / float(initial_length_mm)
+
     return strain, stress
 
 def fit_modulus(strain, stress):
@@ -134,12 +174,16 @@ def check_sheet_exists(path: Path, sheet_name_sanitized: str) -> bool:
     return sheet_name_sanitized in df['sheet_name_sanitized'].values
 
 def update_database(path: Path, new_rows: list):
+    """
+    Updates the CSV database.
+    """
     columns = [
         'timestamp', 'workbook_filename', 'sheet_name_raw', 'sheet_name_sanitized',
         'sample_name', 'sample_index', 'initial_length_mm', 'thickness_mm', 
         'width_mm', 'area_mm2', 'modulus_pa', 'modulus_gpa', 
         'r_value', 'n_points', 'strain_fit_min', 'strain_fit_max', 
-        'notes', 'tags'
+        'notes', 'tags',
+        'curve_strain', 'curve_stress' # <--- NEW COLUMNS FOR CURVE DATA
     ]
     
     new_df = pd.DataFrame(new_rows)
@@ -151,14 +195,15 @@ def update_database(path: Path, new_rows: list):
     existing_df = get_current_db(path)
     
     if not existing_df.empty:
-        # Upsert Logic: Remove old entries for this sheet
         sheets_being_updated = new_df['sheet_name_sanitized'].unique()
-        # Ensure existing_df has the right columns to avoid errors
         existing_df = existing_df.reindex(columns=columns)
         existing_df = existing_df[~existing_df['sheet_name_sanitized'].isin(sheets_being_updated)]
         final_df = pd.concat([existing_df, new_df], ignore_index=True)
     else:
         final_df = new_df
+
+    sheet_id = new_df['sheet_name_sanitized'].iloc[0] if not new_df.empty else "batch"
+    save_db(path, final_df, commit_msg=f"Update results for {sheet_id}")
 
     # SAVE (Local or Cloud)
     sheet_id = new_df['sheet_name_sanitized'].iloc[0] if not new_df.empty else "batch"
@@ -173,3 +218,4 @@ def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tag_string:
     if mask.any():
         df.loc[mask, 'tags'] = new_tag_string
         save_db(path, df, commit_msg=f"Update tags for {sheet_name_sanitized}")
+
