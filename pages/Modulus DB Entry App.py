@@ -119,6 +119,13 @@ if selected_sheet:
             disabled=not dic_avail, 
             help="If checked, uses Column E directly as strain. Ignores Initial Length."
         )
+        # --- ADD THIS BLOCK ---
+        if use_dic:
+            sanitized_name = f"{sanitized_name}-DIC"
+        # ----------------------
+
+        if use_dic and not dic_avail:
+            st.warning("Column E appears empty. DIC mode may fail.")
         if use_dic and not dic_avail:
             st.warning("Column E appears empty. DIC mode may fail.")
             
@@ -291,3 +298,4 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
