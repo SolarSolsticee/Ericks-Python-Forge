@@ -16,6 +16,7 @@ seaborn
 yt-dlp
 pdfplumber
 github
+aiohttp>=3.10.0
 
 
 
