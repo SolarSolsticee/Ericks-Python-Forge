@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import json
 
 # Import logic from the local module
 from excel_modulus import (
@@ -306,4 +307,5 @@ st.subheader("Strain Window Selection")
             st.success(f"Saved {len(rows)} samples to `{output_csv}`")
             st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
             st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
