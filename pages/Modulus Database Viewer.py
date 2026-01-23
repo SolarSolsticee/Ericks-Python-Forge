@@ -101,8 +101,8 @@ col2.metric("Unique Materials", df_filtered['display_name'].nunique())
 col3.metric("Global Avg Modulus", f"{df_filtered['modulus_gpa'].mean():.2f} GPa")
 
 # ADDED NEW TAB: "Edit Tags"
-tab_overview, tab_compare, tab_calculator, tab_edit, tab_curves = st.tabs(
-    ["📊 Overview", "📋 Raw Data", "🧮 Calculator", "✏️ Edit Tags", "📈 Curve Compare"]
+tab_overview, tab_compare, tab_calculator, tab_edit, tab_curves, tab_manage = st.tabs(
+    ["📊 Overview", "📋 Raw Data", "🧮 Calculator", "✏️ Edit Tags", "📈 Curve Compare", "🗑️ Manage Data"]
 )
 
 # ... [Keep Tab 1, 2, and 3 contents EXACTLY as they were in the previous version] ...
@@ -308,3 +308,68 @@ with tab_curves:
                 
             else:
                 st.info("Select samples above to generate the plot.")
+
+
+# === TAB 6: MANAGE DATA (DELETE) ===
+from excel_modulus import delete_samples_from_db # Import the function
+
+with tab_manage:
+    st.subheader("Delete Data Entries")
+    st.warning("⚠️ Actions here are permanent. If connected to GitHub, this will push a new commit removing the data.")
+    
+    # 1. Select Material (Sheet)
+    # We use the raw sanitized names to ensure we target the right data
+    unique_sheets = sorted(df_full['sheet_name_sanitized'].unique())
+    target_sheet = st.selectbox("Select Material / Sheet", options=unique_sheets)
+    
+    if target_sheet:
+        # Get samples for this sheet
+        sheet_rows = df_full[df_full['sheet_name_sanitized'] == target_sheet]
+        
+        # Create a list of sample names: "Sheet-1", "Sheet-2"
+        available_samples = sorted(sheet_rows['sample_name'].unique())
+        
+        # 2. Select Samples to Delete
+        selected_to_delete = st.multiselect(
+            "Select Samples to Delete", 
+            options=available_samples,
+            default=[] # Default to none for safety
+        )
+        
+        # "Select All" helper
+        if st.checkbox("Select All Samples in this Sheet"):
+            selected_to_delete = available_samples
+            st.info(f"Selected all {len(selected_to_delete)} samples.")
+        
+        st.divider()
+        
+        # 3. Confirmation Button
+        if selected_to_delete:
+            st.write(f"Ready to delete **{len(selected_to_delete)}** samples.")
+            
+            # Use Session State for double-confirmation
+            if "confirm_delete" not in st.session_state:
+                st.session_state["confirm_delete"] = False
+                
+            delete_btn = st.button("🗑️ Delete Selected Samples", type="primary")
+            
+            if delete_btn:
+                st.session_state["confirm_delete"] = True
+                
+            if st.session_state["confirm_delete"]:
+                st.error("Are you sure? This cannot be undone.")
+                col_d1, col_d2 = st.columns(2)
+                
+                if col_d1.button("Yes, Delete Permanently"):
+                    # PERFORM DELETION
+                    delete_samples_from_db(CSV_PATH, selected_to_delete)
+                    
+                    st.success("Deleted!")
+                    st.session_state["confirm_delete"] = False
+                    st.cache_data.clear() # Clear cache to refresh data
+                    # Optional: st.rerun()
+                    
+                if col_d2.button("Cancel"):
+                    st.session_state["confirm_delete"] = False
+                    st.info("Cancelled.")
+
