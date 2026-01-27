@@ -261,25 +261,29 @@ if selected_sheet:
             modulus_pa = fit['slope']
             modulus_gpa = modulus_pa / 1e9 if not np.isnan(modulus_pa) else 0.0
             
+            # SERIALIZE CURVES WITH NAN PROTECTION
             curve_strain_str = ""
             curve_stress_str = ""
+            
             if save_curves:
-                # OPTIMIZATION: Downsample to keep CSV small
-                # [::50] takes every 50th point. 
-                # This reduces a 50MB file to 1MB while keeping the shape.
-                
                 s_raw = p['strain_raw']
                 s_stress = p['stress_raw']
                 
-                # Only downsample if we have a lot of data (>1000 points)
-                if len(s_raw) > 1000:
-                    step = int(len(s_raw) / 500) # Aim for ~500 points total
+                # 1. Downsample (Keep file size manageable)
+                if len(s_raw) > 500:
+                    step = int(len(s_raw) / 500)
+                    if step < 1: step = 1
                     s_raw = s_raw[::step]
                     s_stress = s_stress[::step]
                 
-                # Save
-                curve_strain_str = json.dumps(np.round(s_raw, 5).tolist()) 
-                curve_stress_str = json.dumps(np.round(s_stress, 0).tolist())
+                # 2. Clean NaNs (NaN breaks JSON)
+                # Convert numpy array to list, then replace nan with None
+                s_raw_list = [x if np.isfinite(x) else None for x in s_raw]
+                s_stress_list = [x if np.isfinite(x) else None for x in s_stress]
+                
+                # 3. Dump
+                curve_strain_str = json.dumps(s_raw_list) 
+                curve_stress_str = json.dumps(s_stress_list)
 
             rows.append({
                 'timestamp': datetime.utcnow().isoformat(),
@@ -312,5 +316,6 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
 
