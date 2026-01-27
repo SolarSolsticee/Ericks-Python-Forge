@@ -264,8 +264,22 @@ if selected_sheet:
             curve_strain_str = ""
             curve_stress_str = ""
             if save_curves:
-                curve_strain_str = json.dumps(np.round(p['strain_raw'], 6).tolist()) 
-                curve_stress_str = json.dumps(np.round(p['stress_raw'], 0).tolist()) 
+                # OPTIMIZATION: Downsample to keep CSV small
+                # [::50] takes every 50th point. 
+                # This reduces a 50MB file to 1MB while keeping the shape.
+                
+                s_raw = p['strain_raw']
+                s_stress = p['stress_raw']
+                
+                # Only downsample if we have a lot of data (>1000 points)
+                if len(s_raw) > 1000:
+                    step = int(len(s_raw) / 500) # Aim for ~500 points total
+                    s_raw = s_raw[::step]
+                    s_stress = s_stress[::step]
+                
+                # Save
+                curve_strain_str = json.dumps(np.round(s_raw, 5).tolist()) 
+                curve_stress_str = json.dumps(np.round(s_stress, 0).tolist())
 
             rows.append({
                 'timestamp': datetime.utcnow().isoformat(),
@@ -298,4 +312,5 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
