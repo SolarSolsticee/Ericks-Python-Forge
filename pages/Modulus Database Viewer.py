@@ -246,68 +246,102 @@ with tab_curves:
             # 2. Controls
             c_sel, c_tog = st.columns([3, 1])
             
+            # Construct a label unique to every sample
+            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+            
             with c_sel:
-                has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
                 selected_curves = st.multiselect(
                     "Select Samples to Graph", 
                     options=has_curve['select_label'].unique(),
-                    default=has_curve['select_label'].head(3).tolist()
+                    default=has_curve['select_label'].head(5).tolist()
                 )
             
             with c_tog:
                 st.write("") # Spacer
-                st.write("") # Spacer
-                # THE NEW TOGGLE
+                # Toggle 1: Physics Units
                 show_raw = st.toggle("Show Raw Force / Ext", value=False, 
-                                     help="Plots Load (N) vs Extension (mm) instead of Stress (MPa) vs Strain (%).")
+                                     help="Plots Load (N) vs Extension (mm). Default is Stress (MPa) vs Strain (%).")
+                
+                # Toggle 2: De-clutter (NEW)
+                show_rep_only = st.toggle("Show Representative Only", value=False,
+                                          help="For each material, hides all samples except the one closest to the average Modulus.")
 
             if selected_curves:
+                # --- REPRESENTATIVE FILTER LOGIC ---
+                final_labels_to_plot = selected_curves
+                
+                if show_rep_only:
+                    final_labels_to_plot = []
+                    # Get the subset of data corresponding to user selection
+                    subset = has_curve[has_curve['select_label'].isin(selected_curves)]
+                    
+                    # Group by Material (display_name) to find the 'winner' for each material
+                    for material_name, group in subset.groupby('display_name'):
+                        if len(group) == 0: continue
+                        
+                        # Calculate Average Modulus for this specific group of selected samples
+                        avg_mod = group['modulus_gpa'].mean()
+                        
+                        # Find the sample with minimal difference to the average
+                        # abs(sample_mod - avg) -> find index of min
+                        best_idx = (group['modulus_gpa'] - avg_mod).abs().idxmin()
+                        
+                        # Get the specific label for that winner
+                        winner_label = group.loc[best_idx, 'select_label']
+                        final_labels_to_plot.append(winner_label)
+                        
+                    st.caption(f"Showing {len(final_labels_to_plot)} representative curves (closest to average).")
+
+                # --- PLOTTING LOGIC ---
                 fig, ax = plt.subplots(figsize=(10, 6))
                 
-                # Iterate and Plot
-                for label in selected_curves:
+                for label in final_labels_to_plot:
+                    # Fetch row safely
                     row = has_curve[has_curve['select_label'] == label].iloc[0]
                     
                     try:
-                        # De-serialize JSON arrays
-                        strain_arr = np.array(json.loads(row['curve_strain'])) # Unitless (mm/mm)
-                        stress_arr = np.array(json.loads(row['curve_stress'])) # Pascals (Pa)
+                        strain_arr = np.array(json.loads(row['curve_strain']))
+                        stress_arr = np.array(json.loads(row['curve_stress']))
                         
-                        # LOGIC: RAW vs ENGINEERING
+                        # Handle NaNs (None from JSON becomes None in python list)
+                        # We cast to float, Nones become NaNs, matplotlib handles NaNs by skipping
+                        strain_arr = strain_arr.astype(float)
+                        stress_arr = stress_arr.astype(float)
+
                         if show_raw:
-                            # RECONSTRUCT RAW DATA
-                            # Force F = Stress * Area
+                            # Raw Force/Extension
                             area_mm2 = row.get('area_mm2', 1.0)
                             if pd.isna(area_mm2): area_mm2 = 1.0
                             area_m2 = area_mm2 * 1e-6
                             y_data = stress_arr * area_m2  # Newtons
                             
-                            # Extension dL = Strain * L0
                             L0_mm = row.get('initial_length_mm', 100.0)
                             if pd.isna(L0_mm): L0_mm = 100.0
                             x_data = strain_arr * L0_mm    # mm
-                            
                         else:
-                            # STANDARD ENGINEERING CURVES
+                            # Engineering Stress/Strain
                             y_data = stress_arr / 1e6      # MPa
-                            x_data = strain_arr * 100      # Percent %
-
+                            x_data = strain_arr * 100      # Percent
+                        
                         # Plot
-                        ax.plot(x_data, y_data, label=label)
+                        # Use clean sample name for legend if filtering is on
+                        legend_label = row['display_name'] if show_rep_only else label
+                        ax.plot(x_data, y_data, label=legend_label)
                         
                     except Exception as e:
-                        st.error(f"Error plotting {label}: {e}")
+                        st.warning(f"Could not parse curve for {label}")
 
-                # Dynamic Axis Labels
+                # Axis Labels
                 if show_raw:
                     ax.set_xlabel("Extension (mm)")
                     ax.set_ylabel("Load Force (N)")
-                    ax.set_title("Raw Load-Extension Curves")
                 else:
                     ax.set_xlabel("Strain (%)")
                     ax.set_ylabel("Stress (MPa)")
-                    ax.set_title("Comparative Stress-Strain Curves")
                 
+                
+
+                ax.set_title("Comparative Curves")
                 ax.legend()
                 ax.grid(True, alpha=0.3)
                 st.pyplot(fig)
@@ -378,5 +412,6 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
