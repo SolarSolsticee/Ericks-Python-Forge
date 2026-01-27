@@ -48,44 +48,67 @@ def load_csv_from_github(filename):
         print(f"Error loading DB: {e}")
         return pd.DataFrame()
 
+def get_sha_for_large_file(repo, filename, branch):
+    """
+    Retrieves the SHA of a file by listing the directory contents 
+    instead of downloading the file. This bypasses the 1MB limit.
+    """
+    try:
+        # Determine the parent directory of the file
+        # If filename is "modulus_db.csv", parent is root ("")
+        path_obj = Path(filename)
+        # Use str(parent) but handle the "." case for root
+        parent_dir = str(path_obj.parent)
+        if parent_dir == ".":
+            parent_dir = ""
+            
+        # List all files in that directory (Metadata only, very small)
+        files = repo.get_contents(parent_dir, ref=branch)
+        
+        # Look for our file in the list
+        target_name = path_obj.name
+        for f in files:
+            if f.name == target_name:
+                return f.sha
+        return None
+        
+    except Exception:
+        return None
+
 def push_csv_to_github(filename, df, commit_message):
-    """Updates (or creates) the CSV file in the GitHub repo."""
+    """Updates (or creates) the CSV file in the GitHub repo, large-file safe."""
     repo = get_github_repo()
     branch = st.secrets["github"]["branch"]
     csv_content = df.to_csv(index=False)
     
-    # Clean filename (API dislikes leading ./)
+    # Clean filename
     filename = str(filename).lstrip("./")
 
     try:
-        # 1. Try to fetch the existing file (we NEED the SHA to update)
-        contents = repo.get_contents(filename, ref=branch)
-        
-        # PyGithub can return a list if the path implies a directory, handle that safety case
-        if isinstance(contents, list):
-            contents = contents[0]
+        # 1. Get SHA safely (avoiding 1MB download limit)
+        sha = get_sha_for_large_file(repo, filename, branch)
 
-        # 2. File exists -> Update it using the fetched SHA
-        repo.update_file(
-            path=contents.path,
-            message=commit_message,
-            content=csv_content,
-            sha=contents.sha, # <--- The critical missing piece in the error
-            branch=branch
-        )
-        
-    except GithubException as e:
-        if e.status == 404:
-            # 3. File not found (404) -> Create new file (no SHA needed)
+        if sha:
+            # 2. File exists -> Update it
+            repo.update_file(
+                path=filename,
+                message=commit_message,
+                content=csv_content,
+                sha=sha,
+                branch=branch
+            )
+        else:
+            # 3. File doesn't exist -> Create it
             repo.create_file(
                 path=filename,
                 message=commit_message,
                 content=csv_content,
                 branch=branch
             )
-        else:
-            # 4. Some other error (Permissions, etc.) -> Raise it so we see it
-            raise e
+            
+    except GithubException as e:
+        print(f"GitHub Error: {e}")
+        raise e
 
 # --- CORE LOGIC ---
 
@@ -281,6 +304,7 @@ def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     
     if deleted_count > 0:
         save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
+
 
 
 
