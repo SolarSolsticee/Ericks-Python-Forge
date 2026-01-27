@@ -50,6 +50,12 @@ def load_data():
 
 df_full = load_data()
 
+# --- ADD THIS BLOCK ---
+if st.sidebar.button("🔄 Force Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
+# ----------------------
+
 # --- 2. Sidebar Filters ---
 st.sidebar.header("Filter Database")
 if df_full.empty:
@@ -372,4 +378,5 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
