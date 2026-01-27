@@ -25,29 +25,30 @@ def get_github_repo():
     return g.get_repo(st.secrets["github"]["repo_name"])
 
 def load_csv_from_github(filename):
-    """Downloads the CSV content using the raw URL to bypass the 1MB API limit."""
+    """Downloads CSV from GitHub Raw URL. Robust against parsing errors."""
     repo = get_github_repo()
     if not repo:
         return pd.DataFrame()
         
     try:
-        # 1. Get the file metadata (lightweight) to find the download URL
+        # 1. Get metadata
         contents = repo.get_contents(filename, ref=st.secrets["github"]["branch"])
-        
-        # 2. Use pandas to read directly from the raw URL
-        # We must pass the token in the storage_options for private repos
         token = st.secrets["github"]["token"]
         
+        # 2. Read with robust settings
+        # on_bad_lines='skip' ensures one bad row doesn't kill the whole app
+        # engine='python' is slower but handles complex quotes/JSON much better
         return pd.read_csv(
             contents.download_url, 
-            storage_options={'Authorization': f'token {token}'}
+            storage_options={'Authorization': f'token {token}'},
+            on_bad_lines='skip', 
+            engine='python' 
         )
         
     except Exception as e:
-        # File doesn't exist or connection failed
         print(f"Error loading DB: {e}")
+        # Return empty DF so app doesn't crash
         return pd.DataFrame()
-
 def get_sha_for_large_file(repo, filename, branch):
     """
     Retrieves the SHA of a file by listing the directory contents 
@@ -304,6 +305,7 @@ def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     
     if deleted_count > 0:
         save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
+
 
 
 
