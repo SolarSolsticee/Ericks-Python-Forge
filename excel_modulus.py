@@ -25,13 +25,27 @@ def get_github_repo():
     return g.get_repo(st.secrets["github"]["repo_name"])
 
 def load_csv_from_github(filename):
-    """Downloads the CSV content from GitHub main branch."""
+    """Downloads the CSV content using the raw URL to bypass the 1MB API limit."""
     repo = get_github_repo()
+    if not repo:
+        return pd.DataFrame()
+        
     try:
+        # 1. Get the file metadata (lightweight) to find the download URL
         contents = repo.get_contents(filename, ref=st.secrets["github"]["branch"])
-        return pd.read_csv(StringIO(contents.decoded_content.decode()))
-    except Exception:
-        # File might not exist yet
+        
+        # 2. Use pandas to read directly from the raw URL
+        # We must pass the token in the storage_options for private repos
+        token = st.secrets["github"]["token"]
+        
+        return pd.read_csv(
+            contents.download_url, 
+            storage_options={'Authorization': f'token {token}'}
+        )
+        
+    except Exception as e:
+        # File doesn't exist or connection failed
+        print(f"Error loading DB: {e}")
         return pd.DataFrame()
 
 def push_csv_to_github(filename, df, commit_message):
@@ -267,6 +281,7 @@ def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     
     if deleted_count > 0:
         save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
+
 
 
 
