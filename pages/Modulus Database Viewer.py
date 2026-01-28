@@ -233,7 +233,7 @@ with tab_edit:
 with tab_curves:
     st.subheader("Compare Stress-Strain Curves")
     
-    # 1. Check for data presence
+    # 1. Check for data
     if 'curve_strain' not in df_filtered.columns:
         st.warning("No curve data found. Enable 'Log Stress/Strain Curves' in app.py and save new data.")
     else:
@@ -243,54 +243,49 @@ with tab_curves:
         if has_curve.empty:
             st.info("No saved curves found in the current filtered selection.")
         else:
-            # --- NEW: LOCAL TAG EXCLUSION ---
-            # Get tags present in the current curve dataset
+            # --- 2. CONTROLS (Updated Layout) ---
+            
+            # Row 1: Exclude specific tags locally
             curve_tags = set()
             for t_str in has_curve['tags'].unique():
                 if t_str:
                     curve_tags.update([t.strip() for t in t_str.split(',') if t.strip()])
             
-            # Layout for filters
-            c_ex, c_sel = st.columns([1, 2])
-            
-            with c_ex:
-                # Local filter: Remove specific tags just from this plot view
+            if curve_tags:
                 exclude_plot_tags = st.multiselect(
-                    "❌ Exclude Tags (Plot Only)", 
-                    options=sorted(list(curve_tags)),
-                    help="Hide samples containing these tags from the selection list below."
+                    "❌ Exclude curves with tags (Plot only):", 
+                    options=sorted(list(curve_tags))
                 )
-                
-                # Apply Exclusion
                 if exclude_plot_tags:
-                    # Identify rows to hide
                     hide_mask = has_curve['tags'].apply(lambda x: any(t in x for t in exclude_plot_tags))
                     has_curve = has_curve[~hide_mask]
 
-            with c_sel:
-                # Construct readable labels
-                has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
-                
-                selected_curves = st.multiselect(
-                    "Select Samples to Graph", 
-                    options=has_curve['select_label'].unique(),
-                    default=has_curve['select_label'].head(5).tolist()
-                )
+            # Row 2: Curve Selection
+            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
             
-            # --- TOGGLES ROW ---
-            c_t1, c_t2, c_t3 = st.columns(3)
-            with c_t1:
-                show_raw = st.toggle("Show Raw Force/Ext", value=False, 
-                                     help="Plot N vs mm instead of MPa vs %")
-            with c_t2:
-                show_rep_only = st.toggle("Show Representative Only", value=False,
+            selected_curves = st.multiselect(
+                "Select Samples to Graph", 
+                options=has_curve['select_label'].unique(),
+                default=has_curve['select_label'].head(5).tolist()
+            )
+            
+            st.write("") # Spacer
+            
+            # Row 3: Toggles (Dedicated row for visibility)
+            c_tog1, c_tog2, c_tog3 = st.columns(3)
+            
+            with c_tog1:
+                show_raw = st.toggle("Show Raw Force (N)", value=False)
+            with c_tog2:
+                show_rep_only = st.toggle("Representative Only", value=False, 
                                           help="Hide outliers; show only the curve closest to the average.")
-            with c_t3:
-                show_legend_tags = st.toggle("Show Tags in Legend", value=True,
-                                             help="Append tags to the legend label for context.")
+            with c_tog3:
+                # THIS IS THE MISSING TOGGLE
+                show_legend_tags = st.toggle("Show Tags in Legend", value=True)
 
+            # --- 3. PLOTTING LOGIC ---
             if selected_curves:
-                # --- FILTERING LOGIC ---
+                # Filter Representative Curves if requested
                 final_labels_to_plot = selected_curves
                 
                 if show_rep_only:
@@ -306,8 +301,8 @@ with tab_curves:
                     
                     st.caption(f"Showing {len(final_labels_to_plot)} representative curves.")
 
-                # --- PLOTTING ---
-                fig, ax = plt.subplots(figsize=(12, 7)) # Slightly wider for legend
+                # Plot
+                fig, ax = plt.subplots(figsize=(12, 7))
                 
                 for label in final_labels_to_plot:
                     row = has_curve[has_curve['select_label'] == label].iloc[0]
@@ -327,42 +322,23 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # --- NEW: LEGEND BUILDER ---
-                        # Base Name
+                        # --- LEGEND BUILDER ---
                         if show_rep_only:
                             base_name = row['display_name']
                         else:
-                            base_name = label.split(" | ")[-1] # Just sample name e.g. "TR4-1-2"
+                            # Shorten label "TR4-1 | TR4-1-1" -> "TR4-1-1"
+                            base_name = label.split(" | ")[-1] 
                         
-                        # Append Tags?
                         legend_label = base_name
-                        if show_legend_tags and row['tags']:
-                            # Clean up tag string
-                            clean_tags = row['tags'].strip()
-                            if clean_tags:
-                                legend_label = f"{base_name} [{clean_tags}]"
-
-                        # Plot
-                        ax.plot(x_data, y_data, label=legend_label)
                         
-                    except Exception as e:
-                        st.warning(f"Error: {label} - {e}")
+                        # Append Tags if Toggle is ON
+                        if show_legend_tags:
+                            tag_val = str(row['tags']).strip() # Force string for safety
+                            if tag_val and tag_val.lower() != 'nan':
+                                legend_label = f"{base_name} [{tag_val}]"
 
-                # Styling
-                if show_raw:
-                    ax.set_xlabel("Extension (mm)")
-                    ax.set_ylabel("Load Force (N)")
-                else:
-                    ax.set_xlabel("Strain (%)")
-                    ax.set_ylabel("Stress (MPa)")
-                
-                ax.set_title("Comparative Curves")
-                ax.legend()
-                ax.grid(True, alpha=0.3)
-                st.pyplot(fig)
-                
-            else:
-                st.info("Select samples above to generate the plot.")
+                        # Plot Line
+                        ax.plot(x_data, y_data, label=legend_label)
 
 # === TAB 6: MANAGE DATA (DELETE) ===
 from excel_modulus import delete_samples_from_db # Import the function
@@ -426,6 +402,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
