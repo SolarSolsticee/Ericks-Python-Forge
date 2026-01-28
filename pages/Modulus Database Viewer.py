@@ -339,7 +339,25 @@ with tab_curves:
 
                         # Plot Line
                         ax.plot(x_data, y_data, label=legend_label)
+                        
+                    except Exception as e:
+                        st.warning(f"Error parsing {label}: {e}")
 
+                # Graph Styling
+                if show_raw:
+                    ax.set_xlabel("Extension (mm)")
+                    ax.set_ylabel("Load Force (N)")
+                else:
+                    ax.set_xlabel("Strain (%)")
+                    ax.set_ylabel("Stress (MPa)")
+                
+                ax.set_title("Comparative Curves")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                
+            else:
+                st.info("Select samples above to generate the plot.")
 # === TAB 6: MANAGE DATA (DELETE) ===
 from excel_modulus import delete_samples_from_db # Import the function
 
@@ -402,6 +420,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
