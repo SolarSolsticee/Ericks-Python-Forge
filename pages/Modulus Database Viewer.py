@@ -243,44 +243,47 @@ with tab_curves:
         if has_curve.empty:
             st.info("No saved curves found in the current filtered selection.")
         else:
-            # --- 2. CONTROLS (Updated Layout) ---
+            # --- 2. CONTROLS ---
             
-            # Row 1: Exclude specific tags locally
+            # Row 1: Graph Customization
+            c_cust1, c_cust2 = st.columns([1, 2])
+            
+            # Get all available tags in this subset
             curve_tags = set()
             for t_str in has_curve['tags'].unique():
                 if t_str:
                     curve_tags.update([t.strip() for t in t_str.split(',') if t.strip()])
             
-            if curve_tags:
-                exclude_plot_tags = st.multiselect(
-                    "❌ Exclude curves with tags (Plot only):", 
-                    options=sorted(list(curve_tags))
+            with c_cust1:
+                # NEW: Custom Title
+                graph_title = st.text_input("Graph Title", value="Comparative Stress-Strain Curves")
+                
+                # UPDATED: Tag Hider (Visual Only)
+                hidden_legend_tags = st.multiselect(
+                    "👁️ Hide Tags from Legend text:", 
+                    options=sorted(list(curve_tags)),
+                    help="Curves with these tags will still appear, but the tag text will be removed from the legend to save space."
                 )
-                if exclude_plot_tags:
-                    hide_mask = has_curve['tags'].apply(lambda x: any(t in x for t in exclude_plot_tags))
-                    has_curve = has_curve[~hide_mask]
 
-            # Row 2: Curve Selection
-            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
-            
-            selected_curves = st.multiselect(
-                "Select Samples to Graph", 
-                options=has_curve['select_label'].unique(),
-                default=has_curve['select_label'].head(5).tolist()
-            )
+            with c_cust2:
+                # Construct readable labels
+                has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+                
+                selected_curves = st.multiselect(
+                    "Select Samples to Graph", 
+                    options=has_curve['select_label'].unique(),
+                    default=has_curve['select_label'].head(5).tolist()
+                )
             
             st.write("") # Spacer
             
-            # Row 3: Toggles (Dedicated row for visibility)
+            # Row 2: Toggles
             c_tog1, c_tog2, c_tog3 = st.columns(3)
-            
             with c_tog1:
                 show_raw = st.toggle("Show Raw Force (N)", value=False)
             with c_tog2:
-                show_rep_only = st.toggle("Representative Only", value=False, 
-                                          help="Hide outliers; show only the curve closest to the average.")
+                show_rep_only = st.toggle("Representative Only (Avg)", value=False)
             with c_tog3:
-                # THIS IS THE MISSING TOGGLE
                 show_legend_tags = st.toggle("Show Tags in Legend", value=True)
 
             # --- 3. PLOTTING LOGIC ---
@@ -290,6 +293,7 @@ with tab_curves:
                 
                 if show_rep_only:
                     final_labels_to_plot = []
+                    # Use the subset selected by user
                     subset = has_curve[has_curve['select_label'].isin(selected_curves)]
                     
                     for material_name, group in subset.groupby('display_name'):
@@ -309,8 +313,8 @@ with tab_curves:
                     
                     try:
                         # Parse Data
-                        strain_arr = np.array(json.loads(row['curve_strain'])).astype(float)
-                        stress_arr = np.array(json.loads(row['curve_stress'])).astype(float)
+                        strain_arr = np.array(json.loads(row['curve_strain']), dtype=float)
+                        stress_arr = np.array(json.loads(row['curve_stress']), dtype=float)
                         
                         # Determine Units
                         if show_raw:
@@ -322,26 +326,33 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # --- LEGEND BUILDER ---
+                        # --- LEGEND BUILDER (Updated) ---
                         if show_rep_only:
                             base_name = row['display_name']
                         else:
-                            # Shorten label "TR4-1 | TR4-1-1" -> "TR4-1-1"
                             base_name = label.split(" | ")[-1] 
                         
                         legend_label = base_name
                         
-                        # Append Tags if Toggle is ON
+                        # Append Tags (with Visual Filtering)
                         if show_legend_tags:
-                            tag_val = str(row['tags']).strip() # Force string for safety
+                            tag_val = str(row['tags']).strip()
                             if tag_val and tag_val.lower() != 'nan':
-                                legend_label = f"{base_name} [{tag_val}]"
+                                # Split tags into list
+                                current_tags = [t.strip() for t in tag_val.split(',') if t.strip()]
+                                
+                                # Filter out the ones user wants to hide visually
+                                visible_tags = [t for t in current_tags if t not in hidden_legend_tags]
+                                
+                                # Only append brackets if tags remain
+                                if visible_tags:
+                                    legend_label = f"{base_name} [{', '.join(visible_tags)}]"
 
                         # Plot Line
                         ax.plot(x_data, y_data, label=legend_label)
                         
                     except Exception as e:
-                        st.warning(f"Error parsing {label}: {e}")
+                        pass # Skip bad curves
 
                 # Graph Styling
                 if show_raw:
@@ -351,7 +362,7 @@ with tab_curves:
                     ax.set_xlabel("Strain (%)")
                     ax.set_ylabel("Stress (MPa)")
                 
-                ax.set_title("Comparative Curves")
+                ax.set_title(graph_title) # <--- Uses Custom Title
                 ax.legend()
                 ax.grid(True, alpha=0.3)
                 st.pyplot(fig)
@@ -420,6 +431,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
