@@ -316,38 +316,39 @@ with tab_curves:
                         strain_arr = np.array(json.loads(row['curve_strain']), dtype=float)
                         stress_arr = np.array(json.loads(row['curve_stress']), dtype=float)
                         
-                        # --- ORIGIN ALIGNMENT LOGIC ---
-                        if align_origin and not show_raw: # Only align engineering curves
-                            # 1. Get Modulus in MPa (same units as stress_arr / 1e6)
+                        # --- 1. TOE COMPENSATION (Align & Clean) ---
+                        if align_origin and not show_raw: 
+                            # A. Vertical Tare (Fix floating starts)
+                            # Shift stress so the minimum value is 0 (removes sensor drift)
+                            stress_arr = stress_arr - np.nanmin(stress_arr)
+
+                            # B. Horizontal Align (The Projection)
                             mod_mpa = row['modulus_gpa'] * 1000.0
-                            
-                            # 2. Get the Strain Fit Range (where modulus was calculated)
-                            # We use the MAX of the fit range as our anchor point
-                            fit_max = row.get('strain_fit_max', 0.02) # Default 2% if missing
+                            fit_max = row.get('strain_fit_max', 0.02)
                             
                             if mod_mpa > 0:
-                                # Find index in data closest to fit_max
-                                # strain_arr is usually 0.01, 0.02 etc
+                                # Anchor to the fitted region
                                 idx_anchor = (np.abs(strain_arr - fit_max)).argmin()
-                                
-                                # Get coords at anchor point
                                 y_anchor = stress_arr[idx_anchor] / 1e6 # MPa
                                 x_anchor = strain_arr[idx_anchor]       # Unitless
                                 
-                                # 3. Calculate theoretical X intercept based on y = mx + c
-                                # y = E * (x - x_offset)  ->  x_offset = x - (y / E)
+                                # Shift X
                                 x_offset = x_anchor - (y_anchor / mod_mpa)
-                                
-                                # 4. Shift Strain Array
                                 strain_arr = strain_arr - x_offset
                                 
-                                # 5. Mask negative strains (clean up the 'toe')
-                                # We keep a tiny bit before zero just for visuals, or strict cut
-                                mask = strain_arr >= -0.0005 
-                                strain_arr = strain_arr[mask]
-                                stress_arr = stress_arr[mask]
+                                # C. Smart Toe Clipping (The Red Line Fix)
+                                # Instead of cutting just negative strain, we cut low stress.
+                                # Calculate 1% of the max stress for this sample
+                                stress_threshold = np.nanmax(stress_arr) * 0.01 
+                                
+                                # Create mask: Keep data that is ABOVE 1% stress OR POSITIVE strain
+                                # This removes the "tail" dragging on the floor, but keeps the elastic rise
+                                clean_mask = (stress_arr > stress_threshold) & (strain_arr > -0.002)
+                                
+                                strain_arr = strain_arr[clean_mask]
+                                stress_arr = stress_arr[clean_mask]
 
-                        # Units Setup
+                        # --- 2. UNITS & AXES ---
                         if show_raw:
                             area_m2 = row.get('area_mm2', 1.0) * 1e-6
                             y_data = stress_arr * area_m2 # N
@@ -357,10 +358,13 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # Legend Builder
-                        base_name = row['display_name'] if show_rep_only else label.split(" | ")[-1]
-                        legend_label = base_name
+                        # --- 3. LEGEND ---
+                        if show_rep_only:
+                            base_name = row['display_name']
+                        else:
+                            base_name = label.split(" | ")[-1] 
                         
+                        legend_label = base_name
                         if show_legend_tags:
                             tag_val = str(row['tags']).strip()
                             if tag_val and tag_val.lower() != 'nan':
@@ -453,6 +457,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
