@@ -248,25 +248,23 @@ with tab_curves:
             # Row 1: Graph Customization
             c_cust1, c_cust2 = st.columns([1, 2])
             
-            # Get all available tags in this subset
+            # Get tags
             curve_tags = set()
             for t_str in has_curve['tags'].unique():
                 if t_str:
                     curve_tags.update([t.strip() for t in t_str.split(',') if t.strip()])
             
             with c_cust1:
-                # NEW: Custom Title
                 graph_title = st.text_input("Graph Title", value="Comparative Stress-Strain Curves")
                 
-                # UPDATED: Tag Hider (Visual Only)
+                # Visual Tag Filter
                 hidden_legend_tags = st.multiselect(
                     "👁️ Hide Tags from Legend text:", 
                     options=sorted(list(curve_tags)),
-                    help="Curves with these tags will still appear, but the tag text will be removed from the legend to save space."
+                    help="Curves remain visible, but these tags are removed from the legend text."
                 )
 
             with c_cust2:
-                # Construct readable labels
                 has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
                 
                 selected_curves = st.multiselect(
@@ -275,27 +273,29 @@ with tab_curves:
                     default=has_curve['select_label'].head(5).tolist()
                 )
             
-            st.write("") # Spacer
+            st.write("") 
+            st.caption("⚙️ Graph Settings")
             
             # Row 2: Toggles
-            c_tog1, c_tog2, c_tog3 = st.columns(3)
+            c_tog1, c_tog2, c_tog3, c_tog4 = st.columns(4)
             with c_tog1:
                 show_raw = st.toggle("Show Raw Force (N)", value=False)
             with c_tog2:
                 show_rep_only = st.toggle("Representative Only (Avg)", value=False)
             with c_tog3:
                 show_legend_tags = st.toggle("Show Tags in Legend", value=True)
+            with c_tog4:
+                # NEW: ALIGNMENT TOGGLE
+                align_origin = st.toggle("📐 Align Linear Region to (0,0)", value=False, 
+                                         help="Corrects for slack/toe. Projects the modulus slope back to zero and shifts the curve.")
 
             # --- 3. PLOTTING LOGIC ---
             if selected_curves:
-                # Filter Representative Curves if requested
                 final_labels_to_plot = selected_curves
                 
                 if show_rep_only:
                     final_labels_to_plot = []
-                    # Use the subset selected by user
                     subset = has_curve[has_curve['select_label'].isin(selected_curves)]
-                    
                     for material_name, group in subset.groupby('display_name'):
                         if len(group) == 0: continue
                         avg_mod = group['modulus_gpa'].mean()
@@ -303,7 +303,7 @@ with tab_curves:
                         winner_label = group.loc[best_idx, 'select_label']
                         final_labels_to_plot.append(winner_label)
                     
-                    st.caption(f"Showing {len(final_labels_to_plot)} representative curves.")
+                    st.info(f"Filtered to {len(final_labels_to_plot)} representative curves.")
 
                 # Plot
                 fig, ax = plt.subplots(figsize=(12, 7))
@@ -316,7 +316,38 @@ with tab_curves:
                         strain_arr = np.array(json.loads(row['curve_strain']), dtype=float)
                         stress_arr = np.array(json.loads(row['curve_stress']), dtype=float)
                         
-                        # Determine Units
+                        # --- ORIGIN ALIGNMENT LOGIC ---
+                        if align_origin and not show_raw: # Only align engineering curves
+                            # 1. Get Modulus in MPa (same units as stress_arr / 1e6)
+                            mod_mpa = row['modulus_gpa'] * 1000.0
+                            
+                            # 2. Get the Strain Fit Range (where modulus was calculated)
+                            # We use the MAX of the fit range as our anchor point
+                            fit_max = row.get('strain_fit_max', 0.02) # Default 2% if missing
+                            
+                            if mod_mpa > 0:
+                                # Find index in data closest to fit_max
+                                # strain_arr is usually 0.01, 0.02 etc
+                                idx_anchor = (np.abs(strain_arr - fit_max)).argmin()
+                                
+                                # Get coords at anchor point
+                                y_anchor = stress_arr[idx_anchor] / 1e6 # MPa
+                                x_anchor = strain_arr[idx_anchor]       # Unitless
+                                
+                                # 3. Calculate theoretical X intercept based on y = mx + c
+                                # y = E * (x - x_offset)  ->  x_offset = x - (y / E)
+                                x_offset = x_anchor - (y_anchor / mod_mpa)
+                                
+                                # 4. Shift Strain Array
+                                strain_arr = strain_arr - x_offset
+                                
+                                # 5. Mask negative strains (clean up the 'toe')
+                                # We keep a tiny bit before zero just for visuals, or strict cut
+                                mask = strain_arr >= -0.0005 
+                                strain_arr = strain_arr[mask]
+                                stress_arr = stress_arr[mask]
+
+                        # Units Setup
                         if show_raw:
                             area_m2 = row.get('area_mm2', 1.0) * 1e-6
                             y_data = stress_arr * area_m2 # N
@@ -326,33 +357,24 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # --- LEGEND BUILDER (Updated) ---
-                        if show_rep_only:
-                            base_name = row['display_name']
-                        else:
-                            base_name = label.split(" | ")[-1] 
-                        
+                        # Legend Builder
+                        base_name = row['display_name'] if show_rep_only else label.split(" | ")[-1]
                         legend_label = base_name
                         
-                        # Append Tags (with Visual Filtering)
                         if show_legend_tags:
                             tag_val = str(row['tags']).strip()
                             if tag_val and tag_val.lower() != 'nan':
-                                # Split tags into list
-                                current_tags = [t.strip() for t in tag_val.split(',') if t.strip()]
-                                
-                                # Filter out the ones user wants to hide visually
-                                visible_tags = [t for t in current_tags if t not in hidden_legend_tags]
-                                
-                                # Only append brackets if tags remain
-                                if visible_tags:
-                                    legend_label = f"{base_name} [{', '.join(visible_tags)}]"
+                                cur_tags = [t.strip() for t in tag_val.split(',') if t.strip()]
+                                vis_tags = [t for t in cur_tags if t not in hidden_legend_tags]
+                                if vis_tags:
+                                    legend_label = f"{base_name} [{', '.join(vis_tags)}]"
 
-                        # Plot Line
+                        # Plot
                         ax.plot(x_data, y_data, label=legend_label)
                         
                     except Exception as e:
-                        pass # Skip bad curves
+                        # st.warning(f"Skipping {label}: {e}")
+                        pass
 
                 # Graph Styling
                 if show_raw:
@@ -362,7 +384,7 @@ with tab_curves:
                     ax.set_xlabel("Strain (%)")
                     ax.set_ylabel("Stress (MPa)")
                 
-                ax.set_title(graph_title) # <--- Uses Custom Title
+                ax.set_title(graph_title)
                 ax.legend()
                 ax.grid(True, alpha=0.3)
                 st.pyplot(fig)
@@ -431,6 +453,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
