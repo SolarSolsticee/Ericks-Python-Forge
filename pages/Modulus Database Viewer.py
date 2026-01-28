@@ -233,7 +233,7 @@ with tab_edit:
 with tab_curves:
     st.subheader("Compare Stress-Strain Curves")
     
-    # 1. Check for data
+    # 1. Check for data presence
     if 'curve_strain' not in df_filtered.columns:
         st.warning("No curve data found. Enable 'Log Stress/Strain Curves' in app.py and save new data.")
     else:
@@ -243,95 +243,112 @@ with tab_curves:
         if has_curve.empty:
             st.info("No saved curves found in the current filtered selection.")
         else:
-            # 2. Controls
-            c_sel, c_tog = st.columns([3, 1])
+            # --- NEW: LOCAL TAG EXCLUSION ---
+            # Get tags present in the current curve dataset
+            curve_tags = set()
+            for t_str in has_curve['tags'].unique():
+                if t_str:
+                    curve_tags.update([t.strip() for t in t_str.split(',') if t.strip()])
             
-            # Construct a label unique to every sample
-            has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+            # Layout for filters
+            c_ex, c_sel = st.columns([1, 2])
             
+            with c_ex:
+                # Local filter: Remove specific tags just from this plot view
+                exclude_plot_tags = st.multiselect(
+                    "❌ Exclude Tags (Plot Only)", 
+                    options=sorted(list(curve_tags)),
+                    help="Hide samples containing these tags from the selection list below."
+                )
+                
+                # Apply Exclusion
+                if exclude_plot_tags:
+                    # Identify rows to hide
+                    hide_mask = has_curve['tags'].apply(lambda x: any(t in x for t in exclude_plot_tags))
+                    has_curve = has_curve[~hide_mask]
+
             with c_sel:
+                # Construct readable labels
+                has_curve['select_label'] = has_curve['display_name'] + " | " + has_curve['sample_name']
+                
                 selected_curves = st.multiselect(
                     "Select Samples to Graph", 
                     options=has_curve['select_label'].unique(),
                     default=has_curve['select_label'].head(5).tolist()
                 )
             
-            with c_tog:
-                st.write("") # Spacer
-                # Toggle 1: Physics Units
-                show_raw = st.toggle("Show Raw Force / Ext", value=False, 
-                                     help="Plots Load (N) vs Extension (mm). Default is Stress (MPa) vs Strain (%).")
-                
-                # Toggle 2: De-clutter (NEW)
+            # --- TOGGLES ROW ---
+            c_t1, c_t2, c_t3 = st.columns(3)
+            with c_t1:
+                show_raw = st.toggle("Show Raw Force/Ext", value=False, 
+                                     help="Plot N vs mm instead of MPa vs %")
+            with c_t2:
                 show_rep_only = st.toggle("Show Representative Only", value=False,
-                                          help="For each material, hides all samples except the one closest to the average Modulus.")
+                                          help="Hide outliers; show only the curve closest to the average.")
+            with c_t3:
+                show_legend_tags = st.toggle("Show Tags in Legend", value=True,
+                                             help="Append tags to the legend label for context.")
 
             if selected_curves:
-                # --- REPRESENTATIVE FILTER LOGIC ---
+                # --- FILTERING LOGIC ---
                 final_labels_to_plot = selected_curves
                 
                 if show_rep_only:
                     final_labels_to_plot = []
-                    # Get the subset of data corresponding to user selection
                     subset = has_curve[has_curve['select_label'].isin(selected_curves)]
                     
-                    # Group by Material (display_name) to find the 'winner' for each material
                     for material_name, group in subset.groupby('display_name'):
                         if len(group) == 0: continue
-                        
-                        # Calculate Average Modulus for this specific group of selected samples
                         avg_mod = group['modulus_gpa'].mean()
-                        
-                        # Find the sample with minimal difference to the average
-                        # abs(sample_mod - avg) -> find index of min
                         best_idx = (group['modulus_gpa'] - avg_mod).abs().idxmin()
-                        
-                        # Get the specific label for that winner
                         winner_label = group.loc[best_idx, 'select_label']
                         final_labels_to_plot.append(winner_label)
-                        
-                    st.caption(f"Showing {len(final_labels_to_plot)} representative curves (closest to average).")
+                    
+                    st.caption(f"Showing {len(final_labels_to_plot)} representative curves.")
 
-                # --- PLOTTING LOGIC ---
-                fig, ax = plt.subplots(figsize=(10, 6))
+                # --- PLOTTING ---
+                fig, ax = plt.subplots(figsize=(12, 7)) # Slightly wider for legend
                 
                 for label in final_labels_to_plot:
-                    # Fetch row safely
                     row = has_curve[has_curve['select_label'] == label].iloc[0]
                     
                     try:
-                        strain_arr = np.array(json.loads(row['curve_strain']))
-                        stress_arr = np.array(json.loads(row['curve_stress']))
+                        # Parse Data
+                        strain_arr = np.array(json.loads(row['curve_strain'])).astype(float)
+                        stress_arr = np.array(json.loads(row['curve_stress'])).astype(float)
                         
-                        # Handle NaNs (None from JSON becomes None in python list)
-                        # We cast to float, Nones become NaNs, matplotlib handles NaNs by skipping
-                        strain_arr = strain_arr.astype(float)
-                        stress_arr = stress_arr.astype(float)
-
+                        # Determine Units
                         if show_raw:
-                            # Raw Force/Extension
-                            area_mm2 = row.get('area_mm2', 1.0)
-                            if pd.isna(area_mm2): area_mm2 = 1.0
-                            area_m2 = area_mm2 * 1e-6
-                            y_data = stress_arr * area_m2  # Newtons
-                            
+                            area_m2 = row.get('area_mm2', 1.0) * 1e-6
+                            y_data = stress_arr * area_m2 # N
                             L0_mm = row.get('initial_length_mm', 100.0)
-                            if pd.isna(L0_mm): L0_mm = 100.0
-                            x_data = strain_arr * L0_mm    # mm
+                            x_data = strain_arr * L0_mm   # mm
                         else:
-                            # Engineering Stress/Strain
-                            y_data = stress_arr / 1e6      # MPa
-                            x_data = strain_arr * 100      # Percent
+                            y_data = stress_arr / 1e6     # MPa
+                            x_data = strain_arr * 100     # %
                         
+                        # --- NEW: LEGEND BUILDER ---
+                        # Base Name
+                        if show_rep_only:
+                            base_name = row['display_name']
+                        else:
+                            base_name = label.split(" | ")[-1] # Just sample name e.g. "TR4-1-2"
+                        
+                        # Append Tags?
+                        legend_label = base_name
+                        if show_legend_tags and row['tags']:
+                            # Clean up tag string
+                            clean_tags = row['tags'].strip()
+                            if clean_tags:
+                                legend_label = f"{base_name} [{clean_tags}]"
+
                         # Plot
-                        # Use clean sample name for legend if filtering is on
-                        legend_label = row['display_name'] if show_rep_only else label
                         ax.plot(x_data, y_data, label=legend_label)
                         
                     except Exception as e:
-                        st.warning(f"Could not parse curve for {label}")
+                        st.warning(f"Error: {label} - {e}")
 
-                # Axis Labels
+                # Styling
                 if show_raw:
                     ax.set_xlabel("Extension (mm)")
                     ax.set_ylabel("Load Force (N)")
@@ -339,8 +356,6 @@ with tab_curves:
                     ax.set_xlabel("Strain (%)")
                     ax.set_ylabel("Stress (MPa)")
                 
-                
-
                 ax.set_title("Comparative Curves")
                 ax.legend()
                 ax.grid(True, alpha=0.3)
@@ -348,7 +363,6 @@ with tab_curves:
                 
             else:
                 st.info("Select samples above to generate the plot.")
-
 
 # === TAB 6: MANAGE DATA (DELETE) ===
 from excel_modulus import delete_samples_from_db # Import the function
@@ -412,6 +426,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
