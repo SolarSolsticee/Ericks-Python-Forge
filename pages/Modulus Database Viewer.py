@@ -146,14 +146,46 @@ with tab_overview:
 
 # === TAB 2: RAW DATA ===
 with tab_compare:
-    # ... [Same code as previous turn] ...
     st.subheader("Database Entries")
+    
+    # Toggle to switch views
     show_avgs_only = st.checkbox("Show Sheet Averages Only", value=True)
+    
     if show_avgs_only:
-        disp_df = df_filtered.groupby('display_name').agg({'modulus_gpa':'mean', 'tags':'first', 'notes':'first', 'timestamp':'max'}).reset_index()
+        # Define what columns to summarize
+        agg_rules = {
+            'modulus_gpa': 'mean', 
+            'tags': 'first', 
+            'notes': 'first', 
+            'timestamp': 'max'
+        }
+        
+        # Dynamically add IV if it exists in the database
+        if 'iv' in df_filtered.columns:
+            agg_rules['iv'] = 'max' # Uses max to find the non-null value if mixed
+            
+        # Group and Aggregate
+        disp_df = df_filtered.groupby('display_name').agg(agg_rules).reset_index()
+        
+        # Move IV column to a more visible spot (right after Modulus) if it exists
+        cols = list(disp_df.columns)
+        if 'iv' in cols:
+            cols.insert(2, cols.pop(cols.index('iv')))
+            disp_df = disp_df[cols]
+            
     else:
+        # Show everything
         disp_df = df_filtered
-    st.dataframe(disp_df, use_container_width=True)
+
+    st.dataframe(
+        disp_df, 
+        use_container_width=True,
+        column_config={
+            "timestamp": st.column_config.DatetimeColumn(format="D MMM YYYY, HH:mm"),
+            "modulus_gpa": st.column_config.NumberColumn(format="%.2f GPa"),
+            "iv": st.column_config.NumberColumn(format="%.2f dL/g"), # Nice formatting
+        }
+    )
 
 # === TAB 3: CALCULATOR ===
 with tab_calculator:
@@ -503,6 +535,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
