@@ -215,16 +215,34 @@ def fit_modulus(strain, stress):
     res = linregress(strain[mask], stress[mask])
     return dict(slope=res.slope, intercept=res.intercept, rvalue=res.rvalue, n=mask.sum())
 
-# --- DATABASE OPERATIONS (Hybrid Local/Cloud) ---
-
 def get_current_db(path: Path):
-    """Reads DB from GitHub if on Cloud, else local disk."""
-    if is_running_on_streamlit_cloud():
-        return load_csv_from_github(path.name)
+    """Loads the DB and keeps only the latest entry for each sample."""
+    if not path.exists():
+        # Try loading from GitHub if local file missing
+        df = load_csv_from_github(path.name)
     else:
-        if path.exists():
-            return pd.read_csv(path)
-        return pd.DataFrame()
+        try:
+            df = pd.read_csv(path, on_bad_lines='skip', engine='python')
+        except Exception:
+            df = pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    # --- NEW: DEDUPLICATION LOGIC ---
+    # 1. Convert timestamp to datetime
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        
+        # 2. Sort by Time (Newest First)
+        df = df.sort_values('timestamp', ascending=False)
+        
+        # 3. Drop Duplicates (Keep top/newest)
+        # We assume 'sample_name' is the unique ID (e.g. TR6-3-1)
+        if 'sample_name' in df.columns:
+            df = df.drop_duplicates(subset=['sample_name'], keep='first')
+            
+    return df
 
 def save_db(path: Path, df: pd.DataFrame, commit_msg: str):
     """Saves DB to GitHub if on Cloud, else local disk."""
@@ -348,6 +366,7 @@ def update_iv_for_sheet(path: Path, sheet_name_sanitized: str, new_iv: float):
         val = new_iv if new_iv > 0 else None
         df.loc[mask, 'iv'] = val
         save_db(path, df, commit_msg=f"Update IV for {sheet_name_sanitized}")
+
 
 
 
