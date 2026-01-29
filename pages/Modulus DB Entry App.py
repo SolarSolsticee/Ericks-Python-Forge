@@ -313,6 +313,7 @@ if selected_sheet:
                 'strain_fit_max': limit_max,
                 'notes': notes,
                 'tags': final_tag_string, # <--- Uses the combined string
+                'iv': iv_val if iv_val > 0 else None, # <--- Store None if 0
                 'curve_strain': curve_strain_str,
                 'curve_stress': curve_stress_str,
             })
@@ -325,6 +326,7 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
 
 
