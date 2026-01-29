@@ -178,7 +178,6 @@ with tab_edit:
     
     if label:
         sid = name_map[label]
-        # Get current data for this sheet
         rows = df_full[df_full['sheet_name_sanitized'] == sid]
         
         if not rows.empty:
@@ -186,17 +185,45 @@ with tab_edit:
             
             # --- SECTION A: TAGS ---
             st.markdown("#### 🏷️ Tags")
-            curr_tags = rows.iloc[0]['tags']
-            st.write(f"Current: *{curr_tags if curr_tags else '(None)'}*")
+            
+            # 1. Parse current tags into a list
+            curr_tags_str = rows.iloc[0]['tags']
+            curr_tag_list = [t.strip() for t in curr_tags_str.split(',') if t.strip()]
+            
+            # 2. Filter defaults to ensure they exist in global options (prevents Streamlit errors)
+            # (sorted_tags is calculated at the top of the file from the full DB)
+            valid_defaults = [t for t in curr_tag_list if t in sorted_tags]
             
             c_tag1, c_tag2 = st.columns([3, 1])
+            
             with c_tag1:
-                new_t = st.text_input("Update Tags (comma separated)", value=curr_tags, key="edit_tags_box")
+                # The Multiselect: Add/Remove known tags
+                updated_list = st.multiselect(
+                    "Manage Tags (Select from existing)", 
+                    options=sorted_tags, 
+                    default=valid_defaults,
+                    key="edit_multiselect"
+                )
+                
+                # The Text Input: Create NEW tags
+                new_custom = st.text_input("Create new tag (comma separated)", placeholder="e.g. specialized-process")
+
             with c_tag2:
-                st.write("") # Align button
+                st.write("") 
+                st.write("") 
                 st.write("") 
                 if st.button("Save Tags", type="primary"):
-                    update_tags_for_sheet(CSV_PATH, sid, new_t)
+                    # Combine lists
+                    final_combined = updated_list.copy()
+                    
+                    if new_custom:
+                        extras = [t.strip() for t in new_custom.split(',') if t.strip()]
+                        final_combined.extend(extras)
+                    
+                    # Deduplicate and Stringify
+                    final_str = ", ".join(sorted(list(set(final_combined))))
+                    
+                    update_tags_for_sheet(CSV_PATH, sid, final_str)
                     st.success("Tags Saved!")
                     st.cache_data.clear()
             
@@ -205,11 +232,9 @@ with tab_edit:
             # --- SECTION B: INTRINSIC VISCOSITY (IV) ---
             st.markdown("#### 🧪 Intrinsic Viscosity (IV)")
             
-            # Get current IV safely
             curr_iv = 0.0
             if 'iv' in rows.columns:
                 val = rows.iloc[0]['iv']
-                # Check for non-null and numeric
                 if pd.notna(val):
                     try:
                         curr_iv = float(val)
@@ -473,6 +498,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
