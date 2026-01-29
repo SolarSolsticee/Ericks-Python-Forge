@@ -306,6 +306,24 @@ def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     if deleted_count > 0:
         save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
 
+# --- ADD TO excel_modulus.py ---
+
+def update_iv_for_sheet(path: Path, sheet_name_sanitized: str, new_iv: float):
+    """Updates the IV for all samples belonging to a specific sheet."""
+    df = get_current_db(path)
+    if df.empty:
+        return
+    
+    # Ensure column exists
+    if 'iv' not in df.columns:
+        df['iv'] = None
+
+    mask = df['sheet_name_sanitized'] == sheet_name_sanitized
+    if mask.any():
+        # If input is 0, we treat it as "clearing" the value (None)
+        val = new_iv if new_iv > 0 else None
+        df.loc[mask, 'iv'] = val
+        save_db(path, df, commit_msg=f"Update IV for {sheet_name_sanitized}")
 
 
 
