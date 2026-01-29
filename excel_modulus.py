@@ -245,7 +245,7 @@ def update_database(path: Path, new_rows: list):
         'sample_name', 'sample_index', 'initial_length_mm', 'thickness_mm', 
         'width_mm', 'area_mm2', 'modulus_pa', 'modulus_gpa', 
         'r_value', 'n_points', 'strain_fit_min', 'strain_fit_max', 
-        'notes', 'tags',
+        'notes', 'tags', 'iv',
         'curve_strain', 'curve_stress' # <--- NEW COLUMNS FOR CURVE DATA
     ]
     
@@ -305,6 +305,7 @@ def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     
     if deleted_count > 0:
         save_db(path, df_new, commit_msg=f"Deleted {deleted_count} samples")
+
 
 
 
