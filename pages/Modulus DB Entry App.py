@@ -246,7 +246,7 @@ if selected_sheet:
         st.pyplot(fig)
 
     # 5. Save Execution
-    if st.session_state.get("do_save", False):
+    if st.button(f"Save {sanitized_name} to Database", key=f"save_{i}", type="primary"):
         rows = []
         summary_metrics = []
         
@@ -295,7 +295,7 @@ if selected_sheet:
                 curve_stress_str = json.dumps(s_stress_list)
 
             rows.append({
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now().isoformat(),
                 'workbook_filename': filename,
                 'sheet_name_raw': selected_sheet,
                 'sheet_name_sanitized': sanitized_name,
@@ -326,6 +326,7 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
 
 
