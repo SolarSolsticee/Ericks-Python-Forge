@@ -167,7 +167,16 @@ if selected_sheet:
         
         st.divider()
         st.markdown("### Metadata")
-        
+
+        # --- NEW: IV INPUT ---
+        iv_val = st.number_input(
+            "Intrinsic Viscosity (IV) [dL/g]", 
+            value=0.0, 
+            step=0.01, 
+            format="%.2f",
+            help="Optional. Leave at 0.00 if unknown."
+        )
+        # ---------------------
         # --- TAG LOGIC (RESTORED) ---
         # 1. Fetch existing tags
         existing_opts = []
@@ -316,6 +325,7 @@ if selected_sheet:
         st.success(f"Saved {len(rows)} samples to `{output_csv}`")
         st.metric("Average Modulus", f"{avg_mod:.2f} GPa")
         st.dataframe(pd.DataFrame(rows)[['sample_name', 'modulus_gpa', 'tags']])
+
 
 
 
