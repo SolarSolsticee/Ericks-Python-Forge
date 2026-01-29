@@ -9,7 +9,7 @@ from excel_modulus import get_current_db # Import the new function
 import json
 
 # Import the update logic
-from excel_modulus import update_tags_for_sheet
+from excel_modulus import update_tags_for_sheet update_iv_for_sheet
 
 st.set_page_config(page_title="Modulus Database Viewer", layout="wide")
 
@@ -165,70 +165,73 @@ with tab_calculator:
         t = st.selectbox("Target", avail)
         # ... calculation logic ...
 
-# === TAB 4: EDIT TAGS (NEW) ===
+# === TAB 4: EDIT METADATA ===
 with tab_edit:
-    st.subheader("Update Tags for Existing Entries")
-    st.info("Select a material below to modify its tags. This updates the CSV immediately.")
+    st.subheader("Update Material Metadata")
     
-    # 1. Select Material (Use full list, not filtered, so you can edit anything)
-    # We use the raw sanitized names for ID, but display the clean name
+    # 1. Select Material
     edit_opts = df_full[['sheet_name_sanitized', 'display_name']].drop_duplicates()
-    
-    # Create a dictionary for the dropdown: "Display Name (ID)" -> "ID"
-    # This ensures uniqueness if two sheets map to the same display name
     name_map = {f"{row['display_name']} ({row['sheet_name_sanitized']})": row['sheet_name_sanitized'] 
                 for i, row in edit_opts.iterrows()}
     
-    selected_label = st.selectbox("Select Material to Edit", options=sorted(name_map.keys()))
+    label = st.selectbox("Select Material to Edit", options=sorted(name_map.keys()))
     
-    if selected_label:
-        target_sheet_id = name_map[selected_label]
+    if label:
+        sid = name_map[label]
+        # Get current data for this sheet
+        rows = df_full[df_full['sheet_name_sanitized'] == sid]
         
-        # Get current tags for this sheet
-        # We take the tags from the first sample of this sheet
-        current_rows = df_full[df_full['sheet_name_sanitized'] == target_sheet_id]
-        if not current_rows.empty:
-            current_tag_str = current_rows.iloc[0]['tags']
-            # Convert string "a, b" to list ['a', 'b']
-            current_tag_list = [t.strip() for t in current_tag_str.split(',') if t.strip()]
+        if not rows.empty:
+            st.divider()
             
-            st.write(f"**Current Tags:** {current_tag_str if current_tag_str else '(None)'}")
+            # --- SECTION A: TAGS ---
+            st.markdown("#### 🏷️ Tags")
+            curr_tags = rows.iloc[0]['tags']
+            st.write(f"Current: *{curr_tags if curr_tags else '(None)'}*")
             
-            # Form to edit
-            with st.form("edit_tags_form"):
-                # Multiselect with existing global tags
-                updated_selection = st.multiselect(
-                    "Select tags", 
-                    options=sorted_tags, 
-                    default=[t for t in current_tag_list if t in sorted_tags]
+            c_tag1, c_tag2 = st.columns([3, 1])
+            with c_tag1:
+                new_t = st.text_input("Update Tags (comma separated)", value=curr_tags, key="edit_tags_box")
+            with c_tag2:
+                st.write("") # Align button
+                st.write("") 
+                if st.button("Save Tags", type="primary"):
+                    update_tags_for_sheet(CSV_PATH, sid, new_t)
+                    st.success("Tags Saved!")
+                    st.cache_data.clear()
+            
+            st.divider()
+            
+            # --- SECTION B: INTRINSIC VISCOSITY (IV) ---
+            st.markdown("#### 🧪 Intrinsic Viscosity (IV)")
+            
+            # Get current IV safely
+            curr_iv = 0.0
+            if 'iv' in rows.columns:
+                val = rows.iloc[0]['iv']
+                # Check for non-null and numeric
+                if pd.notna(val):
+                    try:
+                        curr_iv = float(val)
+                    except:
+                        curr_iv = 0.0
+            
+            c_iv1, c_iv2 = st.columns([3, 1])
+            with c_iv1:
+                new_iv_val = st.number_input(
+                    "Update IV [dL/g]", 
+                    value=curr_iv, 
+                    step=0.01, 
+                    format="%.2f",
+                    help="Set to 0.00 to remove IV."
                 )
-                
-                # Text input for BRAND NEW tags
-                # Find tags in current_tag_list that are NOT in sorted_tags (custom ones)
-                custom_existing = [t for t in current_tag_list if t not in sorted_tags]
-                custom_existing_str = ", ".join(custom_existing)
-                
-                new_custom_tags = st.text_input("Add new/custom tags (comma separated)", value=custom_existing_str)
-                
-                submitted = st.form_submit_button("Update Database")
-                
-                if submitted:
-                    # Combine lists
-                    final_list = updated_selection.copy()
-                    if new_custom_tags:
-                        extras = [t.strip() for t in new_custom_tags.split(',') if t.strip()]
-                        final_list.extend(extras)
-                    
-                    # Deduplicate and Stringify
-                    final_tag_str = ", ".join(sorted(list(set(final_list))))
-                    
-                    # WRITE TO DB
-                    update_tags_for_sheet(CSV_PATH, target_sheet_id, final_tag_str)
-                    
-                    st.success(f"Updated tags for **{target_sheet_id}** to: {final_tag_str}")
-                    st.cache_data.clear() # Clear cache so viewer reloads new data
-                    # st.rerun() # Optional: force reload page
-
+            with c_iv2:
+                st.write("") 
+                st.write("") 
+                if st.button("Save IV"):
+                    update_iv_for_sheet(CSV_PATH, sid, new_iv_val)
+                    st.success(f"IV updated to {new_iv_val}")
+                    st.cache_data.clear()
 # === TAB 5: CURVE COMPARE ===
 with tab_curves:
     st.subheader("Compare Stress-Strain Curves")
@@ -470,6 +473,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
