@@ -275,15 +275,36 @@ def update_database(path: Path, new_rows: list):
     sheet_id = new_df['sheet_name_sanitized'].iloc[0] if not new_df.empty else "batch"
     save_db(path, final_df, commit_msg=f"Update results for {sheet_id}")
 
-def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tag_string: str):
+# --- UPDATE IN excel_modulus.py ---
+
+def update_tags_for_sheet(path: Path, sheet_name_sanitized: str, new_tags_str: str):
+    """Updates the tags for all samples belonging to a specific sheet."""
+    # 1. Load Fresh DB (with cache busting from our previous fix)
     df = get_current_db(path)
     if df.empty:
         return
     
-    mask = df['sheet_name_sanitized'] == sheet_name_sanitized
+    # 2. Ensure Column Exists
+    if 'tags' not in df.columns:
+        df['tags'] = ''
+    
+    # 3. CRITICAL FIX: Force column to Object type to accept strings
+    # This prevents pandas from treating empty columns as Floats and rejecting text
+    df['tags'] = df['tags'].astype(object) 
+
+    # 4. Find Rows safely
+    # Convert matching column to string to prevent type mismatches (int vs str)
+    mask = df['sheet_name_sanitized'].astype(str) == str(sheet_name_sanitized)
+    
     if mask.any():
-        df.loc[mask, 'tags'] = new_tag_string
-        save_db(path, df, commit_msg=f"Update tags for {sheet_name_sanitized}")
+        # 5. Assign
+        val = new_tags_str if new_tags_str else ""
+        df.loc[mask, 'tags'] = val
+        
+        # 6. Save
+        save_db(path, df, commit_msg=f"Update Tags for {sheet_name_sanitized}")
+    else:
+        print(f"Warning: No rows found for {sheet_name_sanitized}")
 
 def delete_samples_from_db(path: Path, sample_names_to_delete: list):
     """
@@ -327,6 +348,7 @@ def update_iv_for_sheet(path: Path, sheet_name_sanitized: str, new_iv: float):
         val = new_iv if new_iv > 0 else None
         df.loc[mask, 'iv'] = val
         save_db(path, df, commit_msg=f"Update IV for {sheet_name_sanitized}")
+
 
 
 
