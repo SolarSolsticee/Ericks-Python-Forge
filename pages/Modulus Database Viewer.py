@@ -9,7 +9,7 @@ from excel_modulus import get_current_db # Import the new function
 import json
 
 # Import the update logic
-from excel_modulus import update_tags_for_sheet update_iv_for_sheet
+from excel_modulus import update_tags_for_sheet, update_iv_for_sheet
 
 st.set_page_config(page_title="Modulus Database Viewer", layout="wide")
 
@@ -473,6 +473,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
