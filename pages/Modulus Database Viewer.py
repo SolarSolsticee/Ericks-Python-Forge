@@ -358,20 +358,33 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # --- 3. LEGEND ---
+                        # --- LEGEND BUILDER ---
                         if show_rep_only:
                             base_name = row['display_name']
                         else:
                             base_name = label.split(" | ")[-1] 
                         
-                        legend_label = base_name
+                        legend_parts = []
+                        
+                        # 1. Add IV if present (Priority 1)
+                        # Check if column exists and value is valid
+                        if 'iv' in row and pd.notna(row['iv']) and row['iv'] > 0:
+                            legend_parts.append(f"IV: {row['iv']:.2f}")
+
+                        # 2. Add Tags if present (Priority 2)
                         if show_legend_tags:
                             tag_val = str(row['tags']).strip()
                             if tag_val and tag_val.lower() != 'nan':
                                 cur_tags = [t.strip() for t in tag_val.split(',') if t.strip()]
                                 vis_tags = [t for t in cur_tags if t not in hidden_legend_tags]
                                 if vis_tags:
-                                    legend_label = f"{base_name} [{', '.join(vis_tags)}]"
+                                    legend_parts.extend(vis_tags)
+                        
+                        # 3. Assemble
+                        if legend_parts:
+                            legend_label = f"{base_name} [{', '.join(legend_parts)}]"
+                        else:
+                            legend_label = base_name
 
                         # Plot
                         ax.plot(x_data, y_data, label=legend_label)
@@ -457,6 +470,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
