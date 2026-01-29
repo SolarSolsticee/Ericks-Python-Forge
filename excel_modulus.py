@@ -7,6 +7,7 @@ import streamlit as st
 from github import Github, GithubException
 from io import StringIO
 import json
+import time
 
 DEFAULT_WIDTH_MM = 25.4
 
@@ -25,7 +26,7 @@ def get_github_repo():
     return g.get_repo(st.secrets["github"]["repo_name"])
 
 def load_csv_from_github(filename):
-    """Downloads CSV from GitHub Raw URL. Robust against parsing errors."""
+    """Downloads CSV from GitHub Raw URL with Cache Busting."""
     repo = get_github_repo()
     if not repo:
         return pd.DataFrame()
@@ -35,11 +36,14 @@ def load_csv_from_github(filename):
         contents = repo.get_contents(filename, ref=st.secrets["github"]["branch"])
         token = st.secrets["github"]["token"]
         
-        # 2. Read with robust settings
-        # on_bad_lines='skip' ensures one bad row doesn't kill the whole app
-        # engine='python' is slower but handles complex quotes/JSON much better
+        # 2. CACHE BUSTER: Append current timestamp to URL
+        # This forces GitHub to serve the absolute latest version, bypassing the 60s CDN cache
+        raw_url = contents.download_url
+        cache_busted_url = f"{raw_url}?t={int(time.time())}"
+        
+        # 3. Read with robust settings
         return pd.read_csv(
-            contents.download_url, 
+            cache_busted_url, 
             storage_options={'Authorization': f'token {token}'},
             on_bad_lines='skip', 
             engine='python' 
@@ -47,7 +51,6 @@ def load_csv_from_github(filename):
         
     except Exception as e:
         print(f"Error loading DB: {e}")
-        # Return empty DF so app doesn't crash
         return pd.DataFrame()
 def get_sha_for_large_file(repo, filename, branch):
     """
@@ -324,6 +327,7 @@ def update_iv_for_sheet(path: Path, sheet_name_sanitized: str, new_iv: float):
         val = new_iv if new_iv > 0 else None
         df.loc[mask, 'iv'] = val
         save_db(path, df, commit_msg=f"Update IV for {sheet_name_sanitized}")
+
 
 
 
