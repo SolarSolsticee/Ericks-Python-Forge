@@ -186,41 +186,39 @@ with tab_edit:
             # --- SECTION A: TAGS ---
             st.markdown("#### 🏷️ Tags")
             
-            # 1. Parse current tags into a list
             curr_tags_str = rows.iloc[0]['tags']
             curr_tag_list = [t.strip() for t in curr_tags_str.split(',') if t.strip()]
             
-            # 2. Filter defaults to ensure they exist in global options (prevents Streamlit errors)
-            # (sorted_tags is calculated at the top of the file from the full DB)
+            # Filter valid defaults
             valid_defaults = [t for t in curr_tag_list if t in sorted_tags]
             
             c_tag1, c_tag2 = st.columns([3, 1])
             
             with c_tag1:
-                # The Multiselect: Add/Remove known tags
+                # FIX: DYNAMIC KEYS using {sid} ensure the widget resets when sample changes
                 updated_list = st.multiselect(
                     "Manage Tags (Select from existing)", 
                     options=sorted_tags, 
                     default=valid_defaults,
-                    key="edit_multiselect"
+                    key=f"edit_multiselect_{sid}" 
                 )
                 
-                # The Text Input: Create NEW tags
-                new_custom = st.text_input("Create new tag (comma separated)", placeholder="e.g. specialized-process")
+                new_custom = st.text_input(
+                    "Create new tag (comma separated)", 
+                    placeholder="e.g. specialized-process",
+                    key=f"edit_text_{sid}"
+                )
 
             with c_tag2:
                 st.write("") 
                 st.write("") 
                 st.write("") 
-                if st.button("Save Tags", type="primary"):
-                    # Combine lists
+                if st.button("Save Tags", type="primary", key=f"save_btn_{sid}"):
                     final_combined = updated_list.copy()
-                    
                     if new_custom:
                         extras = [t.strip() for t in new_custom.split(',') if t.strip()]
                         final_combined.extend(extras)
                     
-                    # Deduplicate and Stringify
                     final_str = ", ".join(sorted(list(set(final_combined))))
                     
                     update_tags_for_sheet(CSV_PATH, sid, final_str)
@@ -248,12 +246,13 @@ with tab_edit:
                     value=curr_iv, 
                     step=0.01, 
                     format="%.2f",
-                    help="Set to 0.00 to remove IV."
+                    help="Set to 0.00 to remove IV.",
+                    key=f"edit_iv_{sid}" # Dynamic Key
                 )
             with c_iv2:
                 st.write("") 
                 st.write("") 
-                if st.button("Save IV"):
+                if st.button("Save IV", key=f"save_iv_{sid}"):
                     update_iv_for_sheet(CSV_PATH, sid, new_iv_val)
                     st.success(f"IV updated to {new_iv_val}")
                     st.cache_data.clear()
@@ -498,6 +497,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
