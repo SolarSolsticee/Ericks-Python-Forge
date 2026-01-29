@@ -385,7 +385,7 @@ with tab_curves:
                             y_data = stress_arr / 1e6     # MPa
                             x_data = strain_arr * 100     # %
                         
-                        # --- LEGEND BUILDER ---
+                        # --- LEGEND BUILDER (Robust IV Fix) ---
                         if show_rep_only:
                             base_name = row['display_name']
                         else:
@@ -393,12 +393,18 @@ with tab_curves:
                         
                         legend_parts = []
                         
-                        # 1. Add IV if present (Priority 1)
-                        # Check if column exists and value is valid
-                        if 'iv' in row and pd.notna(row['iv']) and row['iv'] > 0:
-                            legend_parts.append(f"IV: {row['iv']:.2f}")
+                        # 1. Add IV (Safe Casting)
+                        if 'iv' in row:
+                            val = row['iv']
+                            try:
+                                # Force convert to float to handle strings like "0.82"
+                                float_iv = float(val) 
+                                if pd.notna(float_iv) and float_iv > 0:
+                                    legend_parts.append(f"IV: {float_iv:.2f}")
+                            except (ValueError, TypeError):
+                                pass # Ignore if it's not a number
 
-                        # 2. Add Tags if present (Priority 2)
+                        # 2. Add Tags (Visual Filter)
                         if show_legend_tags:
                             tag_val = str(row['tags']).strip()
                             if tag_val and tag_val.lower() != 'nan':
@@ -497,6 +503,7 @@ with tab_manage:
                 if col_d2.button("Cancel"):
                     st.session_state["confirm_delete"] = False
                     st.info("Cancelled.")
+
 
 
 
