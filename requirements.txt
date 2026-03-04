@@ -9,13 +9,14 @@ openpyxl
 scipy
 pyqtgraph
 Pillow
-opencv-python
+opencv-python-headless
 tifffile
 xlsxwriter
 seaborn
 yt-dlp
 pdfplumber
 Pygithub
+
 
 
 
